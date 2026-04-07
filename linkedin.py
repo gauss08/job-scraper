@@ -258,3 +258,7 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True) -
             await browser.close()
 
     return jobs
+
+
+
+
