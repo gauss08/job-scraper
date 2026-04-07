@@ -124,3 +124,138 @@ def build_linkedin_url(
         parts.append(f"{k}={quote_plus(str(v))}") # if k not in ('f_E','f_JT','f_WT') else v
     
     return base+"&".join(parts)
+
+
+# ─────────────────────────────────────────────
+#  Scraper
+# ─────────────────────────────────────────────
+
+
+async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True) -> list:
+    jobs=[]
+
+    async with async_playwright() as p:
+        browser=await p.chromium.launch(
+            headless=headless,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+    
+        context=await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1200, "height": 800},
+            locale="en-US",
+        )
+
+        page=await context.new_page()
+        
+        try:
+            print(f" 🔅 Opening : {url[:90]}...")
+            await page.goto(url,wait_until="documentloaded", timeout=30000)
+            await page.wait_for_timeout(3500)
+
+                        # Dismiss sign-in modal
+            for sel in [
+                "button[aria-label='Dismiss']",
+                ".modal__dismiss",
+                "button.sign-in-modal__outlet-btn",
+                "[data-tracking-control-name*='dismiss']",
+            ]:
+                try:
+                    btn = page.locator(sel).first
+                    if await btn.is_visible(timeout=1500):
+                        await btn.click()
+                        await page.wait_for_timeout(800)
+                        break
+                except Exception:
+                    pass
+            
+            # Scroll to trigger lazy loading
+            print(" 🔃 Loading results...")
+            prev_count=0
+            for _ in range(6):
+                await page.keyboard.press("End")
+                await page.wait_for_timeout(1200)
+                cards=await page.locator("ul.jobs-search__results-list li").all()
+                if len(cards) >= max_results or len(cards) == prev_count:
+                    break
+                prev_count=len(cards)
+            
+            # Parse job cards
+            cards = await page.locator("ul.jobs-search__results-list li").all()
+            if not cards:
+                # Fallback selector
+                cards=await page.locator("[data-entity-urn]").all()
+            
+            print(f" ❇️ Found {len(cards)} raw cards, extracting up to {max_results}...")
+
+            for card in cards[:max_results]:
+                job={}
+                try:
+                    #Title
+                    for sel in ["h3.base-search-card__title", ".job-search-card__title", "h3"]:
+                        try:
+                            t=await card.locator(sel).first.inner_text(timeout=800)
+                            if t.strip():
+                                job["title"]=t.strip()
+                                break
+                        except Exception:
+                            pass
+                    
+                    #Company
+                    for sel in ["h4.base-search-card__subtitle", ".job-search-card__company-name", "h4"]:
+                        try:
+                            t=await card.locator(sel).firrst.innner_text(timeout=800)
+                            if t.strip():
+                                job["locator"] = t.strip()
+                                break
+                        except Exception:
+                            pass
+                    
+                    #Date posted
+                    try:
+                        time_el=card.locator("time").first
+                        job["date_posted"]=(await time_el.inner_text(timeout=800)).strip()
+                        dt_attr=await time_el.get_attribute("datetime")
+                        if dt_attr:
+                            job["date_iso"]=dt_attr
+                    except Exception:
+                        pass
+                        
+                    #"Easy Apply" badge
+                    try:
+                        badges = await card.locator(".job-search-card__easy-apply-label, .result-benefits").all_inner_texts()
+                        job["easy_apply"] = any("easy apply" in b.lower() for b in badges)
+                    except Exception:
+                        job["easy_apply"] = False
+                    
+                    # URL
+                    try:
+                        href = await card.locator("a").first.get_attribute("href")
+                        if href:
+                            job["url"] = href.split("?")[0]
+                    except Exception:
+                        pass
+ 
+                    if job.get("title"):
+                        jobs.append(job)
+
+                except Exception:
+                    continue
+
+        except PlaywrightTimeoutError:
+            print("  ✗ Timeout – LinkedIn took too long to respond.")
+        except Exception as e:
+            print(f"  ✗ Error: {e}")
+        finally:
+            await browser.close()
+
+    return jobs
