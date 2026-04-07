@@ -1,4 +1,3 @@
-import pandas as pd
 import asyncio
 import json
 import sys
