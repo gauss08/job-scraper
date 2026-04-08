@@ -327,32 +327,10 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
                     job["title"]    = await _get_text(card,".top-card-layout__title","h3.base-search-card__title", ".job-search-card__title", "h3")
                     
                     #Company
-<<<<<<< HEAD
-                    for sel in ["h4.base-search-card__subtitle", ".job-search-card__company-name", "h4",]:
-                        try:
-                            t=await card.locator(sel).first.inner_text(timeout=800)
-                            if t.strip():
-                                job["company"] = t.strip()
-                                break
-                        except Exception:
-                            pass
-                    
-                    #Location
-                    for sel in [".base-search-card__metadata",]:
-                        try:
-                            t=await card.locator(sel).first.inner_text(timeout=800)
-                            if t.strip():
-                                job["location"] = t.strip()
-                                break
-                        except Exception:
-                            pass
-
-=======
                     job["company"]  = await _get_text(card,".topcard__org-name-link","h4.base-search-card__subtitle", ".job-search-card__company-name", "h4")
 
                     # Location
                     job["location"] = await _get_text(card,".topcard__flavor",".job-search-card__location", "span.job-search-card__location")
->>>>>>> location2
 
                     #Date posted
                     try:
