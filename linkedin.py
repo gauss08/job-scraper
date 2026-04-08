@@ -212,15 +212,26 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True) -
                             pass
                     
                     #Company
-                    for sel in ["h4.base-search-card__subtitle", ".job-search-card__company-name", "h4"]:
+                    for sel in ["h4.base-search-card__subtitle", ".job-search-card__company-name", "h4",]:
                         try:
-                            t=await card.locator(sel).firrst.innner_text(timeout=800)
+                            t=await card.locator(sel).first.inner_text(timeout=800)
                             if t.strip():
-                                job["locator"] = t.strip()
+                                job["company"] = t.strip()
                                 break
                         except Exception:
                             pass
                     
+                    #Location
+                    for sel in [".base-search-card__metadata",]:
+                        try:
+                            t=await card.locator(sel).first.inner_text(timeout=800)
+                            if t.strip():
+                                job["location"] = t.strip()
+                                break
+                        except Exception:
+                            pass
+
+
                     #Date posted
                     try:
                         time_el=card.locator("time").first
