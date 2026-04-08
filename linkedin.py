@@ -1,6 +1,7 @@
 import pandas as pd
 import asyncio
 import json
+import argparse
 import sys
 from datetime import datetime
 from urllib.parse import urlencode, quote_plus
@@ -60,7 +61,7 @@ SORT_BY = {
 def build_linkedin_url(
         keywords: str,
         location: str,
-        data_filter:str = "any",
+        date_filter:str = "any",
         experience: list = None,
         job_type: list = None,
         work_type: list = None,
@@ -79,8 +80,8 @@ def build_linkedin_url(
     #Time
     if custom_seconds:
         params["f_TPR"]=f"r{custom_seconds}"
-    elif data_filter and data_filter !="any":
-        tpr=DATE_FILTERS.get(data_filter,"")
+    elif date_filter and date_filter !="any":
+        tpr=DATE_FILTERS.get(date_filter,"")
         if tpr:
             params["f_TPR"]= tpr
     
@@ -159,7 +160,7 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True) -
         
         try:
             print(f" 🔅 Opening : {url[:90]}...")
-            await page.goto(url,wait_until="documentloaded", timeout=30000)
+            await page.goto(url,wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_timeout(3500)
 
                         # Dismiss sign-in modal
@@ -352,3 +353,196 @@ def _pick(prompt: str, options: dict, multi: bool = False, required: bool = True
             return raw
         return None
 
+
+async def interactive_mode():
+    W = 70
+    print()
+    print("╔" + "═" * (W - 2) + "╗")
+    print("║" + " ADVANCED LINKEDIN JOB SEARCHER ".center(W - 2) + "║")
+    print("╚" + "═" * (W - 2) + "╝")
+    print()
+
+    # ── Required ──────────────────────────────
+    keywords=input("  🔍  Job title / keywords: ").strip()
+    if not keywords:
+        print(" ❌ Keywords are required. Exiting.")
+        return
+
+    location=input(" 📍  Location (city, country, or 'Remote'): ").strip() or "Worldwide"
+
+    # ── Date filter ───────────────────────────
+    date_options={
+        "1h":    "Last 1 hour  (ultra-fresh, fewest results)",
+        "6h":    "Last 6 hours",
+        "24h":   "Last 24 hours",
+        "3d":    "Last 3 days",
+        "week":  "Last week",
+        "month": "Last month",
+        "any":   "Any time (default)",
+    }
+    date_filter = _pick("📅  Date posted:", date_options, multi=False, required=False) or "any"
+
+    # Custom seconds override
+    print("\n  ⏱   Custom time window in seconds? (e.g. 3600 = 1h) Press Enter to skip.")
+    raw_sec = input("  ➤ ").strip()
+    custom_seconds = int(raw_sec) if raw_sec.isdigit() else None
+
+    # ── Experience ────────────────────────────
+    exp_options = {
+        "internship": "Internship",
+        "entry":      "Entry level",
+        "associate":  "Associate",
+        "mid":        "Mid-Senior level",
+        "director":   "Director",
+        "executive":  "Executive",
+    }
+    experience = _pick("🎓  Experience level (multi-select):", exp_options, multi=True) or []
+
+    # ── Job type ──────────────────────────────
+    jtype_options = {
+        "fulltime":   "Full-time",
+        "parttime":   "Part-time",
+        "contract":   "Contract",
+        "temporary":  "Temporary",
+        "internship": "Internship",
+        "volunteer":  "Volunteer",
+    }
+    job_type = _pick("💼  Job type (multi-select):", jtype_options, multi=True) or []
+
+    # ── Work type ─────────────────────────────
+    wtype_options = {
+        "onsite": "On-site",
+        "remote": "Remote",
+        "hybrid": "Hybrid",
+    }
+    work_type = _pick("🏠  Work type (multi-select):", wtype_options, multi=True) or []
+
+    # ── Sort ──────────────────────────────────
+    sort_options = {"recent": "Most recent", "relevant": "Most relevant"}
+    sort_by = _pick("🔢  Sort by:", sort_options, multi=False, required=False) or "recent"
+
+    # ── Toggles ───────────────────────────────
+    print("\n  ⚡  Easy Apply only? [y/N]: ", end="")
+    easy_apply = input().strip().lower() == "y"
+ 
+    print("  🟢  Actively Hiring companies only? [y/N]: ", end="")
+    actively_hiring = input().strip().lower() == "y"  
+
+    # ── Distance ─────────────────────────────
+    print("\n  📏  Search radius in miles? (e.g. 25, 50) Press Enter to skip.")
+    raw_dist = input("  ➤ ").strip()
+    distance = int(raw_dist) if raw_dist.isdigit() else None
+
+    # ── Max results ───────────────────────────
+    print(f"\n  📊  Max results [default: 25]: ", end="")
+    raw_max = input().strip()
+    max_results = int(raw_max) if raw_max.isdigit() else 25
+
+    # ── Headless ─────────────────────────────
+    print("  🖥   Run headless (no browser window)? [Y/n]: ", end="")
+    headless = input().strip().lower() != "n"
+
+    # ── Build & run ───────────────────────────
+    config = dict(
+        keywords=keywords, location=location, date_filter=date_filter,
+        experience=experience, job_type=job_type, work_type=work_type,
+        easy_apply=easy_apply, actively_hiring=actively_hiring,
+        sort_by=sort_by, distance=distance, custom_seconds=custom_seconds,
+    )
+
+    url=build_linkedin_url(**config)
+
+    print()
+    print("─" * W)
+    print(f"  Searching LinkedIn jobs...")
+    jobs = await scrape_jobs(url, max_results=max_results, headless=headless)
+    display_results(jobs, config)
+
+# ─────────────────────────────────────────────
+#  CLI mode
+# ─────────────────────────────────────────────
+ 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Advanced LinkedIn Job Searcher (Playwright)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+EXAMPLES
+  # Basic
+  python linkedin_jobs_advanced.py -k "Python Developer" -l "London"
+ 
+  # With filters
+  python linkedin_jobs_advanced.py -k "Data Scientist" -l "Remote" \\
+    --date 24h --experience mid director --job-type fulltime contract \\
+    --work-type remote hybrid --easy-apply --sort recent --max 30
+ 
+  # Custom time window (last 2 hours)
+  python linkedin_jobs_advanced.py -k "DevOps Engineer" -l "Berlin" --seconds 7200
+ 
+DATE OPTIONS
+  1h / 2h / 3h / 6h / 12h / 24h / 3d / week / month / any
+ 
+EXPERIENCE OPTIONS
+  internship / entry / associate / mid / director / executive
+ 
+JOB TYPE OPTIONS
+  fulltime / parttime / contract / temporary / internship / volunteer
+ 
+WORK TYPE OPTIONS
+  onsite / remote / hybrid
+""",
+    )
+    parser.add_argument("-k", "--keywords", help="Job title or keywords")
+    parser.add_argument("-l", "--location", help="Location", default="")
+    parser.add_argument("--date", default="any", help="Date filter (default: any)")
+    parser.add_argument("--seconds", type=int, help="Custom time window in seconds (overrides --date)")
+    parser.add_argument("--experience", nargs="*", help="Experience levels (multi)")
+    parser.add_argument("--job-type", nargs="*", dest="job_type", help="Job types (multi)")
+    parser.add_argument("--work-type", nargs="*", dest="work_type", help="Work types (multi)")
+    parser.add_argument("--easy-apply", action="store_true", help="Easy Apply only")
+    parser.add_argument("--active", action="store_true", dest="actively_hiring", help="Actively Hiring only")
+    parser.add_argument("--sort", default="recent", choices=["recent", "relevant"], help="Sort order")
+    parser.add_argument("--distance", type=int, help="Search radius in miles")
+    parser.add_argument("--max", type=int, default=25, help="Max results (default: 25)")
+    parser.add_argument("--no-headless", action="store_true", help="Show browser window")
+    parser.add_argument("--json-only", action="store_true", help="Output raw JSON only")
+    return parser.parse_args()
+ 
+ 
+async def cli_mode(args):
+    config = dict(
+        keywords=args.keywords,
+        location=args.location,
+        date_filter=args.date,
+        custom_seconds=args.seconds,
+        experience=args.experience or [],
+        job_type=args.job_type or [],
+        work_type=args.work_type or [],
+        easy_apply=args.easy_apply,
+        actively_hiring=args.actively_hiring,
+        sort_by=args.sort,
+        distance=args.distance,
+    )
+    url = build_linkedin_url(**config)
+    jobs = await scrape_jobs(url, max_results=args.max, headless=not args.no_headless)
+ 
+    if args.json_only:
+        print(json.dumps(jobs, indent=2, ensure_ascii=False))
+    else:
+        display_results(jobs, config)
+
+
+# ─────────────────────────────────────────────
+#  Entry point
+# ─────────────────────────────────────────────
+ 
+def main():
+    args = parse_args()
+    if args.keywords:
+        asyncio.run(cli_mode(args))
+    else:
+        asyncio.run(interactive_mode())
+ 
+ 
+if __name__ == "__main__":
+    main()
