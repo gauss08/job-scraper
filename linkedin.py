@@ -128,11 +128,120 @@ def build_linkedin_url(
 
 
 # ─────────────────────────────────────────────
+#  Helpers
+# ─────────────────────────────────────────────
+ 
+async def _dismiss_modal(page):
+    """Close any sign-in / cookie modal."""
+    for sel in [
+        "button[aria-label='Dismiss']",
+        ".modal__dismiss",
+        "button.sign-in-modal__outlet-btn",
+        "[data-tracking-control-name*='dismiss']",
+        "button[data-modal-dismiss]",
+    ]:
+        try:
+            btn = page.locator(sel).first
+            if await btn.is_visible(timeout=1200):
+                await btn.click()
+                await page.wait_for_timeout(600)
+                return
+        except Exception:
+            pass
+
+
+async def _get_text(locator, *selectors, timeout=900) -> str:
+    """Try multiple CSS selectors, return first non-empty text."""
+    for sel in selectors:
+        try:
+            t = await locator.locator(sel).first.inner_text(timeout=timeout)
+            if t.strip():
+                return t.strip()
+        except Exception:
+            pass
+    return ""
+
+async def _fetch_description(page) -> str:
+    # 1. Wait for the detail panel to render (any of these anchors is enough)
+    panel_anchors = [
+        ".show-more-less-html",
+        ".jobs-description",
+        ".description__text",
+        ".jobs-description-content__text",
+    ]
+    for anchor in panel_anchors:
+        try:
+            await page.wait_for_selector(anchor, timeout=5000, state="attached")
+            break
+        except Exception:
+            pass
+ 
+    # 2. Expand "Show more" — class selector first, text-based fallback
+    expanded = False
+    for expand_sel in [
+        "button.show-more-less-html__button--more",
+        "button.jobs-description__footer-button",
+        "footer.show-more-less-html button",
+    ]:
+        try:
+            btn = page.locator(expand_sel).first
+            if await btn.is_visible(timeout=700):
+                await btn.click()
+                await page.wait_for_timeout(400)
+                expanded = True
+                break
+        except Exception:
+            pass
+ 
+    if not expanded:
+        try:
+            btn = page.locator("button", has_text="Show more").first
+            if await btn.is_visible(timeout=600):
+                await btn.click()
+                await page.wait_for_timeout(400)
+        except Exception:
+            pass
+ 
+    # 3. Try description selectors from most-specific to least-specific.
+    #    (selector, minimum_char_length_to_accept)
+    desc_candidates = [
+        (".show-more-less-html__markup",                        200),  # logged-out classic
+        (".jobs-description-content__text",                     200),  # newer logged-out
+        (".jobs-description__content .jobs-box__html-content",  200),  # logged-in
+        (".jobs-description__content",                          200),  # logged-in fallback
+        (".description__text--rich",                            200),  # old layout
+        (".description__text",                                  200),  # old layout fallback
+        ("[class*='jobs-description']",                         300),  # broad, higher bar
+    ]
+ 
+    for sel, min_len in desc_candidates:
+        try:
+            els = page.locator(sel)
+            count = await els.count()
+            if count == 0:
+                continue
+            best = ""
+            for i in range(min(count, 4)):
+                try:
+                    text = (await els.nth(i).inner_text(timeout=1000)).strip()
+                    if len(text) > len(best):
+                        best = text
+                except Exception:
+                    continue
+            if len(best) >= min_len:
+                return best
+        except Exception:
+            continue
+ 
+    return ""
+
+
+# ─────────────────────────────────────────────
 #  Scraper
 # ─────────────────────────────────────────────
 
 
-async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True) -> list:
+async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, fetch_descriptions: bool = True,) -> list:
     jobs=[]
 
     async with async_playwright() as p:
@@ -162,29 +271,15 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True) -
             print(f" 🔅 Opening : {url[:90]}...")
             await page.goto(url,wait_until="domcontentloaded", timeout=30000)
             await page.wait_for_timeout(3500)
+            await _dismiss_modal(page)
 
-                        # Dismiss sign-in modal
-            for sel in [
-                "button[aria-label='Dismiss']",
-                ".modal__dismiss",
-                "button.sign-in-modal__outlet-btn",
-                "[data-tracking-control-name*='dismiss']",
-            ]:
-                try:
-                    btn = page.locator(sel).first
-                    if await btn.is_visible(timeout=1500):
-                        await btn.click()
-                        await page.wait_for_timeout(800)
-                        break
-                except Exception:
-                    pass
             
-            # Scroll to trigger lazy loading
+            # Scroll to load cards
             print(" 🔃 Loading results...")
             prev_count=0
-            for _ in range(6):
+            for _ in range(7):
                 await page.keyboard.press("End")
-                await page.wait_for_timeout(1200)
+                await page.wait_for_timeout(1100)
                 cards=await page.locator("ul.jobs-search__results-list li").all()
                 if len(cards) >= max_results or len(cards) == prev_count:
                     break
@@ -196,31 +291,22 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True) -
                 # Fallback selector
                 cards=await page.locator("[data-entity-urn]").all()
             
-            print(f" ❇️ Found {len(cards)} raw cards, extracting up to {max_results}...")
+            print(f" ❇️  Found {len(cards)} raw cards, extracting up to {max_results}...")
 
-            for card in cards[:max_results]:
+            for idx,card in enumerate(cards[:max_results],1):
                 job={}
                 try:
+                    #── Card-level fields (no click needed) ──────────
                     #Title
-                    for sel in ["h3.base-search-card__title", ".job-search-card__title", "h3"]:
-                        try:
-                            t=await card.locator(sel).first.inner_text(timeout=800)
-                            if t.strip():
-                                job["title"]=t.strip()
-                                break
-                        except Exception:
-                            pass
+                    job["title"]    = await _get_text(card,"h3.base-search-card__title", ".job-search-card__title", "h3")
                     
                     #Company
-                    for sel in ["h4.base-search-card__subtitle", ".job-search-card__company-name", "h4"]:
-                        try:
-                            t=await card.locator(sel).firrst.innner_text(timeout=800)
-                            if t.strip():
-                                job["locator"] = t.strip()
-                                break
-                        except Exception:
-                            pass
-                    
+                    job["company"]  = await _get_text(card,"h4.base-search-card__subtitle", ".job-search-card__company-name", "h4")
+
+                    # Location
+                    job["location"] = await _get_text(card,".job-search-card__location", "span.job-search-card__location")
+
+
                     #Date posted
                     try:
                         time_el=card.locator("time").first
@@ -246,8 +332,25 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True) -
                     except Exception:
                         pass
  
-                    if job.get("title"):
-                        jobs.append(job)
+                    if not job.get("title"):
+                        continue
+
+                    # ── Click card → load detail panel → grab description ──
+                    if fetch_descriptions:
+                        try:
+                            print(f"   [{idx:02d}/{len(cards)}] {job['title'][:55]} — fetching description...")
+                            # Scroll card into view & click its heading link
+                            link = card.locator("a").first
+                            await link.scroll_into_view_if_needed()
+                            await link.click()
+                            await _dismiss_modal(page)   # modal may reappear
+                            job["description"] = await _fetch_description(page)
+                        except Exception as e:
+                            job["description"] = ""
+                    else:
+                        print(f"   [{idx:02d}/{len(cards)}] {job['title'][:60]}")
+ 
+                    jobs.append(job)                   
 
                 except Exception:
                     continue
@@ -297,9 +400,18 @@ def display_results(jobs: list, config:dict):
         print(f"       🏢  {job.get('company', 'N/A')}")
         print(f"       📍  {job.get('location', 'N/A')}")
         print(f"       📅  {job.get('date_posted', 'N/A')}")
+        #print(f"       ℹ️  {job.get('description', 'N/A')}")
         if job.get("url"):
             print(f"       🔗  {job['url']}")
-    
+
+        desc = job.get("description", "")
+        if desc:
+            preview_lines = [l.strip() for l in desc.splitlines() if l.strip()][:3]
+            preview = " • ".join(preview_lines)
+            if len(preview) > 300:
+                preview = preview[:200] + "..."
+            print(f"       📝  {preview}")
+        
     print()
     print("-"*W)
 
@@ -438,6 +550,10 @@ async def interactive_mode():
     raw_max = input().strip()
     max_results = int(raw_max) if raw_max.isdigit() else 25
 
+    # ── Descriptions ─────────────────────────
+    print("\n  📝  Fetch full job descriptions? [Y/n]: ", end="")
+    fetch_descriptions = input().strip().lower() != "n"
+
     # ── Headless ─────────────────────────────
     print("  🖥   Run headless (no browser window)? [Y/n]: ", end="")
     headless = input().strip().lower() != "n"
@@ -455,7 +571,7 @@ async def interactive_mode():
     print()
     print("─" * W)
     print(f"  Searching LinkedIn jobs...")
-    jobs = await scrape_jobs(url, max_results=max_results, headless=headless)
+    jobs = await scrape_jobs(url, max_results=max_results, headless=headless, fetch_descriptions=fetch_descriptions)
     display_results(jobs, config)
 
 # ─────────────────────────────────────────────
@@ -505,6 +621,7 @@ WORK TYPE OPTIONS
     parser.add_argument("--distance", type=int, help="Search radius in miles")
     parser.add_argument("--max", type=int, default=25, help="Max results (default: 25)")
     parser.add_argument("--no-headless", action="store_true", help="Show browser window")
+    parser.add_argument("--no-descriptions", action="store_true", help="Skip fetching descriptions (faster)")
     parser.add_argument("--json-only", action="store_true", help="Output raw JSON only")
     return parser.parse_args()
  
@@ -524,7 +641,7 @@ async def cli_mode(args):
         distance=args.distance,
     )
     url = build_linkedin_url(**config)
-    jobs = await scrape_jobs(url, max_results=args.max, headless=not args.no_headless)
+    jobs = await scrape_jobs(url, max_results=args.max, headless=not args.no_headless, fetch_descriptions=not args.no_descriptions)
  
     if args.json_only:
         print(json.dumps(jobs, indent=2, ensure_ascii=False))

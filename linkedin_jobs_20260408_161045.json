@@ -1,0 +1,31 @@
+{
+  "meta": {
+    "keywords": "data science",
+    "location": "Germany",
+    "date_filter": "24h",
+    "experience": [],
+    "job_type": [],
+    "work_type": [
+      "remote"
+    ],
+    "easy_apply": false,
+    "actively_hiring": false,
+    "sort_by": "recent",
+    "distance": null,
+    "custom_seconds": null,
+    "scraped_at": "2026-04-08T16:10:45.021933",
+    "total": 1
+  },
+  "jobs": [
+    {
+      "title": "Data Scientist",
+      "company": "HD Life Agency by Vision - Allianz",
+      "location": "Germany",
+      "date_posted": "29 minutes ago",
+      "date_iso": "2026-04-08",
+      "easy_apply": false,
+      "url": "https://de.linkedin.com/jobs/view/data-scientist-at-hd-life-agency-by-vision-allianz-4399244997",
+      "description": ""
+    }
+  ]
+}
