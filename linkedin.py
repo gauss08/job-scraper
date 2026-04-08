@@ -133,32 +133,55 @@ def build_linkedin_url(
  
 async def _dismiss_modal(page):
     """Close any sign-in / cookie modal."""
-    for sel in [
-        "button[aria-label='Dismiss']",
-        ".modal__dismiss",
-        "button.sign-in-modal__outlet-btn",
-        "[data-tracking-control-name*='dismiss']",
-        "button[data-modal-dismiss]",
-    ]:
+
+    MODAL_DISMISS_SELECTORS = [
+    # Generic dismiss buttons
+    "button[aria-label='Dismiss']",
+    "button[aria-label='dismiss']",
+    # Sign-in modal X button
+    ".sign-in-modal__outlet-btn",
+    ".contextual-sign-in-modal__modal-dismiss-btn",
+    # Tracking-name based (works across many modal variants)
+    "[data-tracking-control-name*='dismiss']",
+    "[data-tracking-control-name*='modal_dismiss']",
+    # Cookie consent (EU)
+    "#artdeco-global-alert-container button",
+    # Generic modal close
+    ".modal__dismiss",
+    "button[data-modal-dismiss]",
+    ".artdeco-modal__dismiss",
+    "[aria-label='Close']",
+    "[aria-label='close']",
+    ]
+
+    for sel in MODAL_DISMISS_SELECTORS:
         try:
             btn = page.locator(sel).first
-            if await btn.is_visible(timeout=1200):
+
+            if await btn.is_visible(timeout=500):
                 await btn.click()
-                await page.wait_for_timeout(600)
+                await page.wait_for_timeout(300)
                 return
         except Exception:
             pass
 
+        # Escape key dismisses many overlays (even hard ones remove the CSS block)
+        try:
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(300)
+        except Exception:
+            pass
 
-async def _get_text(locator, *selectors, timeout=900) -> str:
+
+async def _get_text(locator, *selectors, timeout=500) -> str:
     """Try multiple CSS selectors, return first non-empty text."""
     for sel in selectors:
         try:
             t = await locator.locator(sel).first.inner_text(timeout=timeout)
             if t.strip():
                 return t.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"This is a problem : {e}")
     return ""
 
 async def _fetch_description(page) -> str:
@@ -171,7 +194,7 @@ async def _fetch_description(page) -> str:
     ]
     for anchor in panel_anchors:
         try:
-            await page.wait_for_selector(anchor, timeout=5000, state="attached")
+            await page.wait_for_selector(anchor, timeout=2000, state="attached")
             break
         except Exception:
             pass
@@ -179,6 +202,7 @@ async def _fetch_description(page) -> str:
     # 2. Expand "Show more" — class selector first, text-based fallback
     expanded = False
     for expand_sel in [
+        "button.show-more-less-html__button",
         "button.show-more-less-html__button--more",
         "button.jobs-description__footer-button",
         "footer.show-more-less-html button",
@@ -205,13 +229,13 @@ async def _fetch_description(page) -> str:
     # 3. Try description selectors from most-specific to least-specific.
     #    (selector, minimum_char_length_to_accept)
     desc_candidates = [
-        (".show-more-less-html__markup",                        200),  # logged-out classic
-        (".jobs-description-content__text",                     200),  # newer logged-out
-        (".jobs-description__content .jobs-box__html-content",  200),  # logged-in
-        (".jobs-description__content",                          200),  # logged-in fallback
-        (".description__text--rich",                            200),  # old layout
-        (".description__text",                                  200),  # old layout fallback
-        ("[class*='jobs-description']",                         300),  # broad, higher bar
+        (".show-more-less-html__markup",                        100),  # logged-out classic
+        (".jobs-description-content__text",                     100),  # newer logged-out
+        (".jobs-description__content .jobs-box__html-content",  100),  # logged-in
+        (".jobs-description__content",                          100),  # logged-in fallback
+        (".description__text--rich",                            100),  # old layout
+        (".description__text",                                  100),  # old layout fallback
+        ("[class*='jobs-description']",                         100),  # broad, higher bar
     ]
  
     for sel, min_len in desc_candidates:
@@ -223,7 +247,7 @@ async def _fetch_description(page) -> str:
             best = ""
             for i in range(min(count, 4)):
                 try:
-                    text = (await els.nth(i).inner_text(timeout=1000)).strip()
+                    text = (await els.nth(i).inner_text(timeout=500)).strip()
                     if len(text) > len(best):
                         best = text
                 except Exception:
