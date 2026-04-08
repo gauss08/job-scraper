@@ -317,3 +317,38 @@ def display_results(jobs: list, config:dict):
     print("═" * W)
     print()
 
+
+# ─────────────────────────────────────────────
+#  Interactive mode
+# ─────────────────────────────────────────────
+ 
+def _pick(prompt: str, options: dict, multi: bool = False, required: bool = True) -> list | str | None:
+    """Generic menu picker."""
+    keys = list(options.keys())
+    print(f"\n  {prompt}")
+    for i, (k, label) in enumerate(options.items(), 1):
+        print(f"    {i:2}. {label:<25}  [{k}]")
+    if multi:
+        print("    Enter numbers separated by commas, or press Enter to skip.")
+        raw = input("  ➤ ").strip()
+        if not raw:
+            return []
+        chosen = []
+        for part in raw.split(","):
+            part = part.strip()
+            if part.isdigit() and 1 <= int(part) <= len(keys):
+                chosen.append(keys[int(part) - 1])
+        return chosen
+    else:
+        if not required:
+            print("    Press Enter to skip.")
+        raw = input("  ➤ ").strip()
+        if not raw:
+            return None
+        if raw.isdigit() and 1 <= int(raw) <= len(keys):
+            return keys[int(raw) - 1]
+        # allow typing the key directly
+        if raw in keys:
+            return raw
+        return None
+
