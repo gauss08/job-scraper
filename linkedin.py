@@ -261,4 +261,59 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True) -
     return jobs
 
 
+def display_results(jobs: list, config:dict):
+    W=70
+    print()
+    print("="*W)
+    print(f"  {'LINKEDIN JOB SEARCH RESULTS':^{W-4}}")
+    print("═"*W)
+    kv=[
+        ("Keywords",     config.get("keywords", "—")),
+        ("Location",     config.get("location", "—")),
+        ("Date filter",  config.get("date_filter", "any")),
+        ("Experience",   ", ".join(config.get("experience", [])) or "all"),
+        ("Job type",     ", ".join(config.get("job_type", [])) or "all"),
+        ("Work type",    ", ".join(config.get("work_type", [])) or "all"),
+        ("Easy Apply",   "✓" if config.get("easy_apply") else "—"),
+        ("Active hiring","✓" if config.get("actively_hiring") else "—"),
+        ("Sort by",      config.get("sort_by", "recent")),
+        ("Distance",     f"{config['distance']} mi" if config.get("distance") else "—"),
+        ("Results",      str(len(jobs))),
+    ]
+
+    for k,v in kv:
+        print(f" {k:<17} {v}")
+    print("-"*W)
+
+    if not jobs:
+        print(" ❌ No results found.")
+        return
+
+    for i , job in enumerate(jobs,1):
+        ea = " ⚡ Easy Apply" if job.get("easy_apply") else ""
+        print()
+        print(f"  [{i:02d}] {job.get('title', 'N/A')}{ea}")
+        print(f"       🏢  {job.get('company', 'N/A')}")
+        print(f"       📍  {job.get('location', 'N/A')}")
+        print(f"       📅  {job.get('date_posted', 'N/A')}")
+        if job.get("url"):
+            print(f"       🔗  {job['url']}")
+    
+    print()
+    print("-"*W)
+
+    #Save to JSON
+    ts=datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"linkedin_jobs_{ts}.json"
+    output= {
+        "meta": {**config, "scraped_at": datetime.now().isoformat(), "total": len(jobs)},
+        "jobs": jobs,
+    }
+    
+    with open(filename,"w",encoding="utf-8") as f:
+        json.dump(output,f,indent=2,ensure_ascii=False)
+    
+    print(f"  💾  Saved {len(jobs)} jobs → {filename}")
+    print("═" * W)
+    print()
 
