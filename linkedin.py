@@ -1,6 +1,7 @@
 import pandas as pd
 import asyncio
 import json
+import re
 import argparse
 import sys
 from datetime import datetime
@@ -180,11 +181,12 @@ async def _get_text(locator, *selectors, timeout=500) -> str:
             t = await locator.locator(sel).first.inner_text(timeout=timeout)
             if t.strip():
                 return t.strip()
-        except Exception as e:
-            print(f"This is a problem : {e}")
+        except Exception:
+            pass
     return ""
 
 async def _fetch_description(page) -> str:
+    print('Starting Description Extraction')
     # 1. Wait for the detail panel to render (any of these anchors is enough)
     panel_anchors = [
         ".show-more-less-html",
@@ -322,24 +324,31 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
                 try:
                     #── Card-level fields (no click needed) ──────────
                     #Title
-                    job["title"]    = await _get_text(card,"h3.base-search-card__title", ".job-search-card__title", "h3")
+                    job["title"]    = await _get_text(card,".top-card-layout__title","h3.base-search-card__title", ".job-search-card__title", "h3")
+                    print("Title Done")
                     
                     #Company
-                    job["company"]  = await _get_text(card,"h4.base-search-card__subtitle", ".job-search-card__company-name", "h4")
+                    job["company"]  = await _get_text(card,".topcard__org-name-link","h4.base-search-card__subtitle", ".job-search-card__company-name", "h4")
+                    print("Company Done")
 
                     # Location
-                    job["location"] = await _get_text(card,".job-search-card__location", "span.job-search-card__location")
+                    job["location"] = await _get_text(card,".topcard__flavor",".job-search-card__location", "span.job-search-card__location")
+                    print("Location Done")
+
+
+
 
 
                     #Date posted
                     try:
                         time_el=card.locator("time").first
-                        job["date_posted"]=(await time_el.inner_text(timeout=800)).strip()
+                        job["date_posted"]=(await time_el.inner_text(timeout=50)).strip()
                         dt_attr=await time_el.get_attribute("datetime")
                         if dt_attr:
                             job["date_iso"]=dt_attr
                     except Exception:
                         pass
+                    
                         
                     #"Easy Apply" badge
                     try:
@@ -369,15 +378,25 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
                             await link.click()
                             await _dismiss_modal(page)   # modal may reappear
                             job["description"] = await _fetch_description(page)
+                            print("Description Done")
+
+                            job["num_applicants"] = await page.locator("figcaption.num-applicants__caption").inner_text()
+                            print("Num Done")
+                            job["level"] = await page.locator("ul.description__job-criteria-list span.description__job-criteria-text").inner_text()
+                            print("Level Done")
+
+
                         except Exception as e:
                             job["description"] = ""
                     else:
                         print(f"   [{idx:02d}/{len(cards)}] {job['title'][:60]}")
  
-                    jobs.append(job)                   
+                    jobs.append(job)
+                    await page.go_back(wait_until="load")
 
                 except Exception:
                     continue
+
 
         except PlaywrightTimeoutError:
             print("  ✗ Timeout – LinkedIn took too long to respond.")
@@ -424,6 +443,7 @@ def display_results(jobs: list, config:dict):
         print(f"       🏢  {job.get('company', 'N/A')}")
         print(f"       📍  {job.get('location', 'N/A')}")
         print(f"       📅  {job.get('date_posted', 'N/A')}")
+        print(f"       🆘  {job.get('num_applicants', 'N/A')}")
         #print(f"       ℹ️  {job.get('description', 'N/A')}")
         if job.get("url"):
             print(f"       🔗  {job['url']}")
