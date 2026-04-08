@@ -295,7 +295,7 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
         
         try:
             print(f" 🔅 Opening : {url[:90]}...")
-            await page.goto(url,wait_until="domcontentloaded", timeout=30000)
+            await page.goto(url,wait_until="domcontentloaded", timeout=3000)
             await page.wait_for_timeout(3500)
             await _dismiss_modal(page)
 
@@ -325,19 +325,12 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
                     #── Card-level fields (no click needed) ──────────
                     #Title
                     job["title"]    = await _get_text(card,".top-card-layout__title","h3.base-search-card__title", ".job-search-card__title", "h3")
-                    print("Title Done")
                     
                     #Company
                     job["company"]  = await _get_text(card,".topcard__org-name-link","h4.base-search-card__subtitle", ".job-search-card__company-name", "h4")
-                    print("Company Done")
 
                     # Location
                     job["location"] = await _get_text(card,".topcard__flavor",".job-search-card__location", "span.job-search-card__location")
-                    print("Location Done")
-
-
-
-
 
                     #Date posted
                     try:
@@ -349,7 +342,6 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
                     except Exception:
                         pass
                     
-                        
                     #"Easy Apply" badge
                     try:
                         badges = await card.locator(".job-search-card__easy-apply-label, .result-benefits").all_inner_texts()
@@ -378,12 +370,10 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
                             await link.click()
                             await _dismiss_modal(page)   # modal may reappear
                             job["description"] = await _fetch_description(page)
-                            print("Description Done")
-
-                            job["num_applicants"] = await page.locator("figcaption.num-applicants__caption").inner_text()
-                            print("Num Done")
-                            job["level"] = await page.locator("ul.description__job-criteria-list span.description__job-criteria-text").inner_text()
-                            print("Level Done")
+                            num_text = await page.locator("figcaption.num-applicants__caption").inner_text()
+                            job["num_applicants"] = re.findall(r'\d+', num_text)[0]
+                            additional_info=await page.locator("ul.description__job-criteria-list").all_inner_texts()
+                            job["additional_info"] = additional_info[0]
 
 
                         except Exception as e:
