@@ -1,3 +1,4 @@
+import pandas as pd
 import asyncio
 import json
 import sys
@@ -258,3 +259,6 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True) -
             await browser.close()
 
     return jobs
+
+
+
