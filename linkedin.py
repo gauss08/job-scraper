@@ -675,15 +675,18 @@ def parse_args():
         epilog="""
 EXAMPLES
   # Basic
-  python linkedin_jobs_advanced.py -k "Python Developer" -l "London"
+  python3 linkedin.py -k "Python Developer" -l "London"
  
   # With filters
-  python linkedin_jobs_advanced.py -k "Data Scientist" -l "Remote" \\
+  python3 linkedin.py -k "Data Scientist" -l "Remote" \\
     --date 24h --experience mid director --job-type fulltime contract \\
     --work-type remote hybrid --easy-apply --sort recent --max 30
+
+    python3 linkedin.py -k "Data Science" -l "Germany" --date 24h  --work-type "remote" --max 10 --no-headless
+
  
   # Custom time window (last 2 hours)
-  python linkedin_jobs_advanced.py -k "DevOps Engineer" -l "Berlin" --seconds 7200
+  python3 linkedin.py -k "DevOps Engineer" -l "Berlin" --seconds 7200
  
 DATE OPTIONS
   1h / 2h / 3h / 6h / 12h / 24h / 3d / week / month / any
