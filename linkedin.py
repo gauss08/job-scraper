@@ -166,12 +166,15 @@ async def _dismiss_modal(page):
         except Exception:
             pass
 
-        # Escape key dismisses many overlays (even hard ones remove the CSS block)
         try:
-            await page.keyboard.press("Escape")
+            #await page.keyboard.press("Escape")
             await page.wait_for_timeout(300)
         except Exception:
             pass
+    try:
+        await page.keyboard.press("Escape")
+    except Exception:
+        pass
 
 
 async def _get_text(locator, *selectors, timeout=500) -> str:
@@ -185,81 +188,127 @@ async def _get_text(locator, *selectors, timeout=500) -> str:
             pass
     return ""
 
-async def _fetch_description(page) -> str:
-    print('Starting Description Extraction')
-    # 1. Wait for the detail panel to render (any of these anchors is enough)
-    panel_anchors = [
-        ".show-more-less-html",
-        ".jobs-description",
-        ".description__text",
-        ".jobs-description-content__text",
-    ]
-    for anchor in panel_anchors:
-        try:
-            await page.wait_for_selector(anchor, timeout=2000, state="attached")
-            break
-        except Exception:
-            pass
+# ─────────────────────────────────────────────
+#  Detail-panel extractor
+#  Called AFTER clicking a card — reads the RIGHT-SIDE panel.
+#  Does NOT navigate; the list page stays open.
+# ─────────────────────────────────────────────
  
-    # 2. Expand "Show more" — class selector first, text-based fallback
-    expanded = False
-    for expand_sel in [
-        "button.show-more-less-html__button",
-        "button.show-more-less-html__button--more",
-        "button.jobs-description__footer-button",
-        "footer.show-more-less-html button",
-    ]:
-        try:
-            btn = page.locator(expand_sel).first
-            if await btn.is_visible(timeout=700):
-                await btn.click()
-                await page.wait_for_timeout(400)
-                expanded = True
+_DESC_SELECTORS = [
+    (".show-more-less-html__markup",                        80),
+    (".jobs-description-content__text",                     80),
+    (".jobs-description__content .jobs-box__html-content",  80),
+    (".jobs-description__content",                          80),
+    (".description__text--rich",                            80),
+    (".description__text",                                  80),
+    ("[class*='jobs-description']",                        150),
+]
+ 
+_EXPAND_SELECTORS = [
+    "button.show-more-less-html__button--more",
+    "button.show-more-less-html__button",
+    "button.jobs-description__footer-button",
+    "footer.show-more-less-html button",
+]
+ 
+ 
+async def _read_detail_panel(page) -> dict:
+    async def _inner():
+        result = {"description": "", "num_applicants": "", "additional_info": ""}
+ 
+        # ── 1. Wait for panel to appear ──────────────────────────────────
+        panel_found = False
+        for anchor in [".show-more-less-html", ".jobs-description",
+                       ".description__text", ".jobs-description-content__text",
+                       ".job-details-jobs-unified-top-card__job-insight"]:
+            try:
+                await page.wait_for_selector(anchor, timeout=4000, state="attached")
+                panel_found = True
                 break
-        except Exception:
-            pass
+            except Exception:
+                pass
  
-    if not expanded:
-        try:
-            btn = page.locator("button", has_text="Show more").first
-            if await btn.is_visible(timeout=600):
-                await btn.click()
-                await page.wait_for_timeout(400)
-        except Exception:
-            pass
+        if not panel_found:
+            return result   # panel never appeared (gated or slow)
  
-    # 3. Try description selectors from most-specific to least-specific.
-    #    (selector, minimum_char_length_to_accept)
-    desc_candidates = [
-        (".show-more-less-html__markup",                        100),  # logged-out classic
-        (".jobs-description-content__text",                     100),  # newer logged-out
-        (".jobs-description__content .jobs-box__html-content",  100),  # logged-in
-        (".jobs-description__content",                          100),  # logged-in fallback
-        (".description__text--rich",                            100),  # old layout
-        (".description__text",                                  100),  # old layout fallback
-        ("[class*='jobs-description']",                         100),  # broad, higher bar
-    ]
+        # ── 2. Expand "Show more" ────────────────────────────────────────
+        for sel in _EXPAND_SELECTORS:
+            try:
+                btn = page.locator(sel).first
+                if await btn.is_visible(timeout=500):
+                    await btn.click()
+                    await page.wait_for_timeout(300)
+                    break
+            except Exception:
+                pass
+        else:
+            try:
+                btn = page.locator("button", has_text="Show more").first
+                if await btn.is_visible(timeout=400):
+                    await btn.click()
+                    await page.wait_for_timeout(300)
+            except Exception:
+                pass
  
-    for sel, min_len in desc_candidates:
-        try:
-            els = page.locator(sel)
-            count = await els.count()
-            if count == 0:
-                continue
-            best = ""
-            for i in range(min(count, 4)):
-                try:
-                    text = (await els.nth(i).inner_text(timeout=500)).strip()
-                    if len(text) > len(best):
-                        best = text
-                except Exception:
+        # ── 3. Description ───────────────────────────────────────────────
+        for sel, min_len in _DESC_SELECTORS:
+            try:
+                els = page.locator(sel)
+                count = await els.count()
+                if not count:
                     continue
-            if len(best) >= min_len:
-                return best
-        except Exception:
-            continue
+                best = ""
+                for i in range(min(count, 4)):
+                    try:
+                        t = (await els.nth(i).inner_text(timeout=600)).strip()
+                        if len(t) > len(best):
+                            best = t
+                    except Exception:
+                        continue
+                if len(best) >= min_len:
+                    result["description"] = best
+                    break
+            except Exception:
+                continue
  
-    return ""
+        # ── 4. Applicant count ───────────────────────────────────────────
+        for num_sel in [
+            "figcaption.num-applicants__caption",
+            ".num-applicants__caption",
+            "[class*='num-applicants']",
+            ".jobs-unified-top-card__applicant-count",
+            "[class*='applicant-count']",
+        ]:
+            try:
+                el = page.locator(num_sel).first
+                if await el.is_visible(timeout=400):
+                    raw = (await el.inner_text(timeout=400)).strip()
+                    nums = re.findall(r'[\d,]+', raw)
+                    result["num_applicants"] = nums[0].replace(",", "") if nums else raw
+                    break
+            except Exception:
+                pass
+ 
+        # ── 5. Job criteria (Seniority, Employment type, etc.) ──────────
+        for crit_sel in [
+            "ul.description__job-criteria-list",
+            ".job-details-jobs-unified-top-card__job-insight",
+            "[class*='job-criteria']",
+        ]:
+            try:
+                el = page.locator(crit_sel).first
+                if await el.is_visible(timeout=400):
+                    result["additional_info"] = (await el.inner_text(timeout=500)).strip()
+                    break
+            except Exception:
+                pass
+ 
+        return result
+ 
+    try:
+        return await asyncio.wait_for(_inner(), timeout=10)
+    except asyncio.TimeoutError:
+        return {"description": "", "num_applicants": "", "additional_info": ""}
 
 
 # ─────────────────────────────────────────────
@@ -295,7 +344,7 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
         
         try:
             print(f" 🔅 Opening : {url[:90]}...")
-            await page.goto(url,wait_until="domcontentloaded", timeout=3000)
+            await page.goto(url,wait_until="domcontentloaded", timeout=20000)
             await page.wait_for_timeout(3500)
             await _dismiss_modal(page)
 
@@ -303,7 +352,7 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
             # Scroll to load cards
             print(" 🔃 Loading results...")
             prev_count=0
-            for _ in range(7):
+            for _ in range(7): # should be changed    while True 
                 await page.keyboard.press("End")
                 await page.wait_for_timeout(1100)
                 cards=await page.locator("ul.jobs-search__results-list li").all()
@@ -362,27 +411,34 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
 
                     # ── Click card → load detail panel → grab description ──
                     if fetch_descriptions:
+                        print(f"   [{idx:02d}/{max_results}] {job['title'][:55]} — fetching description...")
                         try:
-                            print(f"   [{idx:02d}/{len(cards)}] {job['title'][:55]} — fetching description...")
                             # Scroll card into view & click its heading link
                             link = card.locator("a").first
                             await link.scroll_into_view_if_needed()
-                            await link.click()
-                            await _dismiss_modal(page)   # modal may reappear
-                            job["description"] = await _fetch_description(page)
-                            num_text = await page.locator("figcaption.num-applicants__caption").inner_text()
-                            job["num_applicants"] = re.findall(r'\d+', num_text)[0]
-                            additional_info=await page.locator("ul.description__job-criteria-list").all_inner_texts()
-                            job["additional_info"] = additional_info[0]
+                            await link.dispatch_event("click")
+                            # Small pause then dismiss any modal that appeared
+                            await page.wait_for_timeout(400)
+                            await _dismiss_modal(page)
 
+                            detail = await _read_detail_panel(page)
+                            job.update(detail)
+
+                            '''
+                            This is necessary because, without it, LinkedIn renders the first card differently and navigates to this job.
+                            after a go_back operation, it skips the next card;
+                            that is why idx = idx - 1 is used to ensure the next card isn't skipped.
+                            '''                                
+                            if idx==1:
+                                await page.go_back(wait_until="domcontentloaded", timeout=5000)
+                                idx=idx-1
 
                         except Exception as e:
-                            job["description"] = ""
+                            job.update({"description":"","num_applicants":"","additional_info":""})
                     else:
                         print(f"   [{idx:02d}/{len(cards)}] {job['title'][:60]}")
  
                     jobs.append(job)
-                    await page.go_back(wait_until="load")
 
                 except Exception:
                     continue
