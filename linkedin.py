@@ -745,7 +745,7 @@ async def cli_mode(args):
 # ─────────────────────────────────────────────
 #  Entry point
 # ─────────────────────────────────────────────
- 
+
 def main():
     args = parse_args()
     if args.keywords:
