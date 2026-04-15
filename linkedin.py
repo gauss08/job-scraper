@@ -352,7 +352,7 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
             # Scroll to load cards
             print(" 🔃 Loading results...")
             prev_count=0
-            for _ in range(7): # should be changed    while True 
+            for _ in range(20): # should be changed    while True 
                 await page.keyboard.press("End")
                 await page.wait_for_timeout(1100)
                 cards=await page.locator("ul.jobs-search__results-list li").all()
