@@ -48,25 +48,25 @@ EMPLOYMENT_TYPE={
 SORT_BY={
     1:'published',
     2:'newest',
-    3:'salary',
+    3:'salary desc',
+    4:'salary asc'
 }
 
 def build_linkedin_url(
         keywords: str,
         location: str,
-        date_filter:str = "any",
         experience: list = None,
         work_type: list = None,
         work_mode: str = None,
         employment_type: list =None,
         salary : str = None,
-        sort_by: str = "published",
+        sort_by: str = None,
         radius : str = None
     ) -> str:
 
     params={}
 
-    params['keywords']=keywords
+    params['keyword']=keywords
     #params['location']=location
     location=location if location else 'all-locations'
 
@@ -105,9 +105,16 @@ def build_linkedin_url(
         print(k,v)
         parts.append(f"{k}={quote_plus(str(v))}")
     
+    if sort_by:
+        orderBy='ASC' if int(sort_by) == 4 else 'DESC'
+        sortBy='salary' if int(sort_by) in [3,4] else SORT_BY[int(sort_by)]
+        full_sort=f'orderBy={orderBy}&sortBy={sortBy}'
+
+        return base+location+'?'+'&'.join(parts)+'&'+full_sort
 
 
     return base+location+'?'+'&'.join(parts)
+
 
 if __name__=="__main__":
 
@@ -134,6 +141,10 @@ if __name__=="__main__":
     salary=input('salary : ')
     radius=input('radius : ')
 
+    for k,v in SORT_BY.items():
+        print(f"{k} : {v}")
+    sort_by=input('sort_by : ')
+
     url=build_linkedin_url(
         keywords=keywords,
         location=location,
@@ -142,6 +153,7 @@ if __name__=="__main__":
         employment_type=employment_type,
         work_mode=work_mode,
         salary=salary,
-        radius=radius
+        radius=radius,
+        sort_by=sort_by
     )
     print(url)
