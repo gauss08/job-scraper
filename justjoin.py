@@ -52,6 +52,14 @@ SORT_BY={
     4:'salary asc'
 }
 
+SKILL_LEVELS={
+    'Nice To Have':1,
+    'Junior':2,
+    'Regular':3,
+    'Advanced':4,
+    'Master':5
+}
+
 def build_linkedin_url(
         keywords: str,
         location: str,
@@ -115,6 +123,131 @@ def build_linkedin_url(
 
     return base+location+'?'+'&'.join(parts)
 
+async def _dismiss_modal(page):
+    """Close any sign-in / cookie modal."""
+
+    MODAL_DISMISS_SELECTORS = [
+    # Generic dismiss buttons
+    '.cookiescript_pre_header'
+    ]
+
+    for sel in MODAL_DISMISS_SELECTORS:
+        try:
+            btn = page.locator(sel).first
+
+            if await btn.is_visible(timeout=1000):
+                await btn.click()
+                await page.wait_for_timeout(300)
+                return
+        except Exception:
+            pass
+
+        try:
+            #await page.keyboard.press("Escape")
+            await page.wait_for_timeout(300)
+        except Exception:
+            pass
+    try:
+        await page.keyboard.press("Escape")
+    except Exception:
+        pass
+
+async def _read_details(page) -> dict:
+    info={}
+    skills={}
+
+    info["link"]=await page.locator("link[rel='canonical']").get_attribute('href')
+    info["job_name"]=await page.locator('h1.mui-1w3djua').inner_text()
+    info["company"]=await page.locator('h2.MuiBox-root').inner_text()
+    info["location"]=await page.locator('div.MuiBox-root.mui-1lgfpg4').first.inner_text()
+    info["work_type"]=await page.locator('div.MuiStack-root.mui-9ffzmz').first.inner_text()
+    info["employment_type"]=await page.locator('div.MuiStack-root.mui-9ffzmz').nth(1).inner_text()
+    info["experience"]=await page.locator('div.MuiStack-root.mui-9ffzmz').nth(2).inner_text()
+    info["work_mode"]=await page.locator('div.MuiStack-root.mui-9ffzmz').nth(3).inner_text()
+
+    salary_finder=page.locator('div.MuiTypography-root.mui-1f21jp8')
+    if await salary_finder.count()>0:
+        info["salary"]=await page.locator('div.MuiTypography-root.mui-1f21jp8').inner_text()
+    else:
+        info["salary"]=None
+
+    #info['description']=await page.locator('div.MuiStack-root.mui-qd57u1').inner_text()
+
+    tech_stack=await page.locator('div.MuiStack-root.mui-j7qwjs').inner_text()
+    sp=tech_stack.split('\n')
+
+    for i in range(1,len(sp),2):
+        skills[f'{sp[i]}']=sp[i+1]
+    
+
+    expires=await page.locator('div.MuiStack-root.mui-1uqbqus').inner_text()
+    days_left=expires[:expires.find('(')-1]
+    last_date=re.findall(r"\((.*?)\)", expires)[0]
+
+    info['days_left']=days_left
+    info['last_date']=last_date
+    print(info)
+
+
+
+async def scrape_jobs(url : str, max_results: int = 100, headless: bool = False, fetch_descriptions: bool = True,) -> list:
+    jobs=[]
+
+    async with async_playwright() as p:
+        browser=await p.chromium.launch(
+            headless=headless,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+    
+        context=await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1200, "height": 800},
+            locale="en-US",
+        )
+
+        page=await context.new_page()
+        
+        try:
+            print(f" 🔅 Opening : {url[:90]}...")
+            await page.goto(url,wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_timeout(3500)
+            await _dismiss_modal(page)
+
+            
+            # Scroll to load cards
+            print(" 🔃 Loading results...")
+            for i in range(18): # should be changed    while True 
+                await page.wait_for_timeout(2500)
+                await _dismiss_modal(page)
+                cards=await page.locator("ul.MuiStack-root li").all()
+                link=await cards[i].locator("a").first.get_attribute("href")
+                full_link='https://justjoin.it'+link
+                await page.goto(full_link)
+                await _dismiss_modal(page)
+                info=await _read_details(page)
+                #print(info)
+                await page.wait_for_timeout(3500)
+                await page.go_back(wait_until="domcontentloaded", timeout=5000)
+                print(f"{i+1} : {full_link}")
+
+            
+            
+
+            print(f" ❇️  Found {len(cards)} raw cards, extracting up to {max_results}...")
+        
+        except Exception as e:
+            print(e)
+
+
 
 if __name__=="__main__":
 
@@ -156,4 +289,4 @@ if __name__=="__main__":
         radius=radius,
         sort_by=sort_by
     )
-    print(url)
+    asyncio.run(scrape_jobs(url,500))
