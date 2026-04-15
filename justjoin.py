@@ -346,6 +346,7 @@ async def main():
     filename='justjoin_jobs.json'
     with open(filename,"w",encoding="utf-8") as f:
         json.dump(jobs,f, indent=2, ensure_ascii=False)
+        print('✅ File saved')
 
 
 if __name__=="__main__":
