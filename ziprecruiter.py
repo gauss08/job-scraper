@@ -102,7 +102,7 @@ def build_search_url(
         params["refine_by_salary"]=salary_floor
     
     if salary_ceil:
-        params["refine_by_salary"]=salary_ceil
+        params["refine_by_salary_ceil"]=salary_ceil
 
     base='https://www.ziprecruiter.com/jobs-search?'
     query="&".join(f"{k}={quote_plus(v)}" for k, v in params.items())
@@ -133,7 +133,9 @@ def _prompt_multi(label: str, mapping: dict, single: bool = True) -> list | None
     list[int] or None
     """
     temp={}
+    W=70
 
+    print("-"*W)
     print(f"\n{label}:")
     for k, v in enumerate(mapping.keys(),1):
         temp[k]=v
@@ -157,8 +159,11 @@ def _prompt_multi(label: str, mapping: dict, single: bool = True) -> list | None
 # ---------------------------------------------------------------------------
 
 async def _run_interactive() -> None:
+    W=70
     """Prompt-driven session used when no CLI arguments are supplied."""
+    print("-"*W)
     keywords = input("Keywords: ").strip()
+    print("-"*W)
     location = input("Location (blank = USA): ").strip()
 
     date_filter = _prompt_multi("Date Filter", DATE_FILTER)
@@ -168,10 +173,13 @@ async def _run_interactive() -> None:
     employment_type = _prompt_multi("Employment type", EMPLOYMENT_TYPE)
     work_mode = _prompt_multi("Work mode", WORK_MODE)
  
+    print("-"*W)
     salary_floor = input("\nMin salary ? (blank = no floor salary): ").strip()
     salary_ceil = input("\nMax salary ? (blank = no ceil salary): ").strip()
- 
+    print("-"*W)
+    
     radius = input("Radius in km (blank to skip): ").strip()
+    print("-"*W)
 
     #max_raw = input("\nMax results [default 10]: ").strip()
     #max_results = int(max_raw) if max_raw.isdigit() else 10
