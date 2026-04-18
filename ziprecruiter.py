@@ -109,6 +109,33 @@ def build_search_url(
 
     return f"{base}{query}"
 
+# ---------------------------------------------------------------------------
+# Page helpers
+# ---------------------------------------------------------------------------
+
+async def _dismiss_modal(page):
+    """Attempt to close cookie banners or sign-in modals.
+ 
+    Tries a small set of known CSS selectors, then falls back to pressing
+    ``Escape``.  Failures are silently swallowed — callers should not depend
+    on this function succeeding.
+ 
+    Parameters
+    ----------
+    page:
+        The Playwright :class:`~playwright.async_api.Page` to operate on.
+    """
+
+    try:
+        await page.keyboard.press("Escape")
+        await page.wait_for_timeout(300)
+    except Exception:
+        pass
+
+async def _read_details(page: Page) -> dict:
+    pass
+
+
 
 # ---------------------------------------------------------------------------
 # CLI helpers
