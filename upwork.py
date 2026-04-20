@@ -20,7 +20,6 @@ from playwright.async_api import (
 # Look-up tables
 # ---------------------------------------------------------------------------
 
-
 EXPERIENCE={
     "Any":"",
     "Entry Leve":"1",
@@ -148,49 +147,34 @@ async def _dismiss_modal(page):
         pass
 
 
+async def _read_details(page: Page) -> dict:
 
-# ---------------------------------------------------------------------------
-# CLI helpers
-# ---------------------------------------------------------------------------
 
-def _prompt_multi(label: str, mapping: dict,single: bool = False) -> list | None:
-    """Print a numbered menu and return a list of selected integer keys.
- 
-    The user may type a single number (``2``) or a comma-separated list
-    (``1,3``).  An empty input is treated as *no selection* (returns
-    ``None``).
- 
-    Parameters
-    ----------
-    label:
-        Short descriptive name shown before the menu.
-    mapping:
-        One of the module-level look-up tables (e.g. :data:`EXPERIENCE`).
- 
-    Returns
-    -------
-    list[int] or None
-    """
-    temp={}
-    W=70
 
-    print("-"*W)
-    print(f"\n{label}:")
-    for k, v in enumerate(mapping.keys(),1):
-        temp[k]=v
-        print(f"  {k} : {v}")
-    raw = input(f"{label} (comma-separated, or blank to skip): ").strip()
-    if not raw:
-        return None
-    try:
-        if single:
-            print(temp[int(raw)])
-            return temp[int(raw)]
-        else:
-            return [temp[int(x)] for x in raw.split(",") if x.strip()]
-    except ValueError:
-        print(f"Could not parse '{raw}' — skipping {label} filter.")
-        return None
+    info={}
+
+    if await page.locator("div.reason-text").count()>0:
+        return
+
+    # -- Canonical URL -------------------------------------------------------
+    info["link"]=await page.locator("link[rel='canonical']").get_attribute('href')
+
+
+
+    # -- Header fields -------------------------------------------------------
+    info["job_name"]=await page.locator('h1.m-0.h4').inner_text()
+    info["location"]=await page.locator('p.text-light-on-muted.m-0').first.inner_text()
+    info["posted"] = await page.locator('div.mt-5').first.inner_text()
+
+    info["summary"]= await page.locator('div.break.mt-2').first.inner_text()
+    
+
+
+
+
+ 
+    return info
+
 
 
 # ---------------------------------------------------------------------------
@@ -300,11 +284,54 @@ async def scrape_jobs(base_url : str,
         return collected
 
 
+# ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+
+def _prompt_multi(label: str, mapping: dict,single: bool = False) -> list | None:
+    """Print a numbered menu and return a list of selected integer keys.
+ 
+    The user may type a single number (``2``) or a comma-separated list
+    (``1,3``).  An empty input is treated as *no selection* (returns
+    ``None``).
+ 
+    Parameters
+    ----------
+    label:
+        Short descriptive name shown before the menu.
+    mapping:
+        One of the module-level look-up tables (e.g. :data:`EXPERIENCE`).
+ 
+    Returns
+    -------
+    list[int] or None
+    """
+    temp={}
+    W=70
+
+    print("-"*W)
+    print(f"\n{label}:")
+    for k, v in enumerate(mapping.keys(),1):
+        temp[k]=v
+        print(f"  {k} : {v}")
+    raw = input(f"{label} (comma-separated, or blank to skip): ").strip()
+    if not raw:
+        return None
+    try:
+        if single:
+            print(temp[int(raw)])
+            return temp[int(raw)]
+        else:
+            return [temp[int(x)] for x in raw.split(",") if x.strip()]
+    except ValueError:
+        print(f"Could not parse '{raw}' — skipping {label} filter.")
+        return None
+
+
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-
 
 async def _run_interactive() -> None:
     keywords = input("Keywords: ").strip()
