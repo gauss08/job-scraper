@@ -223,7 +223,6 @@ async def scrape_jobs(base_url : str,
             locale="en-US",
         )
         page=await context.new_page()
-
         collected = []
         page_num=1
         
@@ -249,7 +248,6 @@ async def scrape_jobs(base_url : str,
                     break
                 
                 hrefs=[]
-
                 for i in range(count):
                     try:
                         href = await cards.nth(i).locator("a").nth(0).get_attribute("href", timeout=2000)
@@ -260,16 +258,17 @@ async def scrape_jobs(base_url : str,
                     except Exception:
                         continue
                     
-                # ── Visit each job page ────────────────────────────────────────
-                # ✅ Progress bar setup
+                # ── Phase 2: Visit each job page ──────────────────────────
+                # Progress bar setup
+                remaining = max_results - len(collected)
                 with Progress(
-                    TextColumn("[bold blue]{task.description}"),
+                    TextColumn("[bold green]{task.description}"),
                     BarColumn(),
                     TextColumn("{task.completed}/{task.total} done"),
                     TimeElapsedColumn(),
                 ) as progress:
                 
-                    task = progress.add_task("Scraping jobs...", total=max_results)
+                    task = progress.add_task(f"Page {page_num}...", total=min(len(hrefs), remaining))
 
                     for full_link in hrefs:
                         if len(collected)>=max_results:
@@ -333,7 +332,7 @@ async def _run_interactive() -> None:
 
     print(f" 🔅 URL : {url}")
 
-    jobs=await scrape_jobs(url,max_results=10)
+    jobs=await scrape_jobs(url,max_results=25)
 
 
 
