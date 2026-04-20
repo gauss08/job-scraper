@@ -95,7 +95,7 @@ def build_search_url(
     if salary_type:
         params["t"] = ",".join(SALARY_TYPE[w] for w in salary_type)
  
-    params["sort"] = sort_by if sort_by else  "relevance,desc"
+    params["sort"] = SORT_BY[sort_by] if sort_by else  "relevance,desc"
 
     base='https://www.upwork.com/nx/search/jobs/?nbs=1&'
     query="&".join(f"{k}={quote_plus(v)}" for k, v in params.items())
@@ -184,6 +184,7 @@ def _prompt_multi(label: str, mapping: dict,single: bool = False) -> list | None
         return None
     try:
         if single:
+            print(temp[int(raw)])
             return temp[int(raw)]
         else:
             return [temp[int(x)] for x in raw.split(",") if x.strip()]
@@ -193,13 +194,122 @@ def _prompt_multi(label: str, mapping: dict,single: bool = False) -> list | None
 
 
 # ---------------------------------------------------------------------------
+# Main scraper
+# ---------------------------------------------------------------------------
+
+async def scrape_jobs(base_url : str,
+                      max_results: int = 25,
+                      headless: bool = False,
+                      ) -> list:
+
+    async with async_playwright() as p:
+        browser=await p.chromium.launch(
+            headless=headless,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+    
+        context=await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1200, "height": 800},
+            locale="en-US",
+        )
+        page=await context.new_page()
+
+        collected = []
+        page_num=1
+        
+        try:
+            while len(collected)<max_results:
+                url=f"{base_url}&page={page_num}"
+                print(f" 🔃 Collecting results (max={max_results}, page={page_num})...")
+                
+                try:
+                    await page.goto(url,wait_until="domcontentloaded", timeout=20000)
+                    await page.wait_for_timeout(3500)
+                    await _dismiss_modal(page)
+                except Exception as exc:
+                    print(f" ⚠️ Failed to load page {page_num}: {exc}")
+                    break
+            
+                # ── Phase 1: Harvest hrefs from currently visible cards ──────
+                cards = page.locator("article.job-tile")
+                count = await cards.count()
+                
+                if count==0:
+                    print(" ✅ No more results found.")
+                    break
+                
+                hrefs=[]
+
+                for i in range(count):
+                    try:
+                        href = await cards.nth(i).locator("a").nth(0).get_attribute("href", timeout=2000)
+                        if href:
+                            link=href.split('?')[0][6:]
+                            if link:
+                                hrefs.append('https://www.upwork.com/freelance-jobs/apply/' + link)
+                    except Exception:
+                        continue
+                    
+                # ── Visit each job page ────────────────────────────────────────
+                # ✅ Progress bar setup
+                with Progress(
+                    TextColumn("[bold blue]{task.description}"),
+                    BarColumn(),
+                    TextColumn("{task.completed}/{task.total} done"),
+                    TimeElapsedColumn(),
+                ) as progress:
+                
+                    task = progress.add_task("Scraping jobs...", total=max_results)
+
+                    for full_link in hrefs:
+                        if len(collected)>=max_results:
+                            break
+                        try:
+                            await page.goto(full_link, wait_until="domcontentloaded", timeout=15000)
+                            collected.append(full_link)
+                            progress.update(task, advance=1)
+                            try:
+                                await page.go_back(wait_until="domcontentloaded", timeout=8000)
+                                await page.wait_for_timeout(1200)
+                                await _dismiss_modal(page)
+                            except Exception as e:
+                                await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+                                await page.wait_for_timeout(2_000)
+                                await _dismiss_modal(page)
+                        except Exception as e:
+                            print(f" ⚠️ Failed to visit {full_link}: {e}")
+
+
+                page_num+=1
+                          
+        finally:
+            await page.close()  # Always clean up the page
+            await context.close()
+            await browser.close()
+
+        print(f" ✅ Done. Collected {len(collected)} jobs.")
+        return collected
+
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 
 async def _run_interactive() -> None:
     keywords = input("Keywords: ").strip()
-    client_location = input("Location (blank = all): ").strip()
+    client_location = input("ClientLocation (blank = all): ").strip()
  
     experience = _prompt_multi("Experience Level", EXPERIENCE)
     client_history = _prompt_multi("Client History", CLIENT_HISTORY)
@@ -221,7 +331,14 @@ async def _run_interactive() -> None:
         sort_by=sort_by
     )
 
-    print(f" 🔅 Opening : {url[:90]}...")
+    print(f" 🔅 URL : {url}")
+
+    jobs=await scrape_jobs(url,max_results=10)
+
+
+
+
+
 
 
 
