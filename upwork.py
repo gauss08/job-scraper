@@ -168,9 +168,14 @@ async def _read_details(page: Page) -> dict:
     info["summary"]= await page.locator('div.break.mt-2').first.inner_text()
 
     info["job_info"] = await page.locator("ul.features li").all_text_contents()
-    info["skills"]= await page.locator("div.skills-list").first.inner_text()
-    info["more_skills"]=await page.locator("div.skills-list.justify-content-center").inner_text()
-    print(f"Skills : {info['more_skills']}")
+
+    skills_locator= await page.locator("div.skills-list").first.inner_text()
+    skills=skills_locator.split('\n')
+    more_skills_locator = page.locator("div.skills-list").nth(1).locator('span')
+    more_skills_duplicated=await more_skills_locator.all_text_contents()
+    more_skills=set(more_skills_duplicated)
+    info["skills"]=skills[:-1]+list(more_skills) #in skills last one in --more skills 
+
     info["activity_on_job"]= await page.locator("ul.visitor li").all_text_contents()
     info["client_info"] = await page.locator("ul.ac-items li").all_text_contents()
  
@@ -220,7 +225,9 @@ async def scrape_jobs(base_url : str,
                 
                 try:
                     await page.goto(url,wait_until="domcontentloaded", timeout=20000)
-                    await page.wait_for_timeout(3500)
+                    #verification = await page.locator("span.cb-lb-t").count()
+                    #print(verification)
+                    await page.wait_for_timeout(3500000)
                     await _dismiss_modal(page)
                 except Exception as exc:
                     print(f" ⚠️ Failed to load page {page_num}: {exc}")
@@ -369,7 +376,7 @@ async def _run_interactive() -> None:
 
     print(f" 🔅 URL : {url}")
 
-    jobs=await scrape_jobs(url,max_results=1)
+    jobs=await scrape_jobs(url,max_results=5)
 
     ts=datetime.now().strftime("%Y%m%d_%H%M%S")
     filename=f'upwork_jobs_{ts}.json'
