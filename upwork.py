@@ -245,6 +245,7 @@ async def scrape_jobs(base_url : str,
 
         page=await context.new_page()
         collected = []
+        private_jobs=[]
         page_num=1
         
         try:
@@ -299,11 +300,11 @@ async def scrape_jobs(base_url : str,
 
                             private = page.locator("h4.display-rebrand")
                             if await private.count()>0:
-                                collected.append([full_link,"Private Job"])
+                                private_jobs.append(full_link)
                             else:
                                 info=await _read_details(page)
-                                collected.append([full_link,info])
-                            progress.update(task, advance=1)
+                                collected.append(info)
+                                progress.update(task, advance=1)
 
                             try:
                                 await page.go_back(wait_until="domcontentloaded", timeout=8000)
@@ -325,7 +326,7 @@ async def scrape_jobs(base_url : str,
             #await browser.close()
 
         print(f" ✅ Done. Collected {len(collected)} jobs.")
-        return collected
+        return collected,private_jobs
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +404,7 @@ async def _run_interactive() -> None:
 
     print(f" 🔅 URL : {url}")
 
-    jobs=await scrape_jobs(url,max_results=5)
+    jobs,private_jobs=await scrape_jobs(url,max_results=5)
 
     ts=datetime.now().strftime("%Y%m%d_%H%M%S")
     filename=f'upwork_jobs_{ts}.json'
@@ -411,6 +412,9 @@ async def _run_interactive() -> None:
         json.dump(jobs,f, indent=2, ensure_ascii=False)
     print(f"Saved {len(jobs)} jobs → {filename}")
 
+    with open(f'private_jobs_{ts}.json',"w",encoding="utf-8") as f:
+        json.dump(private_jobs,f, indent=2, ensure_ascii=False)
+    print(f"Saved {len(jobs)} Private jobs")
 
 
 
