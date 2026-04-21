@@ -162,16 +162,17 @@ async def _read_details(page: Page) -> dict:
 
 
     # -- Header fields -------------------------------------------------------
-    info["job_name"]=await page.locator('h1.m-0.h4').inner_text()
-    info["location"]=await page.locator('p.text-light-on-muted.m-0').first.inner_text()
+    info["job_name"] = await page.locator('h1.m-0.h4').inner_text()
+    info["location"] = await page.locator('p.text-light-on-muted.m-0').first.inner_text()
     info["posted"] = await page.locator('div.mt-5').first.inner_text()
-
     info["summary"]= await page.locator('div.break.mt-2').first.inner_text()
-    
 
-
-
-
+    info["job_info"] = await page.locator("ul.features li").all_text_contents()
+    info["skills"]= await page.locator("div.skills-list").first.inner_text()
+    info["more_skills"]=await page.locator("div.skills-list.justify-content-center").inner_text()
+    print(f"Skills : {info['more_skills']}")
+    info["activity_on_job"]= await page.locator("ul.visitor li").all_text_contents()
+    info["client_info"] = await page.locator("ul.ac-items li").all_text_contents()
  
     return info
 
@@ -206,6 +207,8 @@ async def scrape_jobs(base_url : str,
             viewport={"width": 1200, "height": 800},
             locale="en-US",
         )
+
+
         page=await context.new_page()
         collected = []
         page_num=1
@@ -259,8 +262,15 @@ async def scrape_jobs(base_url : str,
                             break
                         try:
                             await page.goto(full_link, wait_until="domcontentloaded", timeout=15000)
-                            collected.append(full_link)
+
+                            private = page.locator("h4.display-rebrand")
+                            if await private.count()>0:
+                                collected.append([full_link,"Private Job"])
+                            else:
+                                info=await _read_details(page)
+                                collected.append([full_link,info])
                             progress.update(task, advance=1)
+
                             try:
                                 await page.go_back(wait_until="domcontentloaded", timeout=8000)
                                 await page.wait_for_timeout(1200)
@@ -359,10 +369,13 @@ async def _run_interactive() -> None:
 
     print(f" 🔅 URL : {url}")
 
-    jobs=await scrape_jobs(url,max_results=25)
+    jobs=await scrape_jobs(url,max_results=1)
 
-
-
+    ts=datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename=f'upwork_jobs_{ts}.json'
+    with open(filename,"w",encoding="utf-8") as f:
+        json.dump(jobs,f, indent=2, ensure_ascii=False)
+    print(f"Saved {len(jobs)} jobs → {filename}")
 
 
 
