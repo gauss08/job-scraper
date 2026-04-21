@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 import sys
+import os
 import argparse
 from datetime import datetime
 from urllib.parse import quote_plus
@@ -167,7 +168,16 @@ async def _read_details(page: Page) -> dict:
     info["posted"] = await page.locator('div.mt-5').first.inner_text()
     info["summary"]= await page.locator('div.break.mt-2').first.inner_text()
 
-    info["job_info"] = await page.locator("ul.features li").all_text_contents()
+    #info["job_info"] = await page.locator("ul.features li").all_text_contents()
+    items = await page.locator("ul.features li").all()
+    job_info = []
+    for item in items:
+        parts = await item.evaluate("""el => {
+        return [...el.children].map(child => child.textContent.trim()).filter(t => t);
+        }""")
+        job_info.append(parts)
+    info['job_info']=job_info
+
 
     skills_locator= await page.locator("div.skills-list").first.inner_text()
     skills=skills_locator.split('\n')
@@ -177,8 +187,18 @@ async def _read_details(page: Page) -> dict:
     info["skills"]=skills[:-1]+list(more_skills) #in skills last one in --more skills 
 
     info["activity_on_job"]= await page.locator("ul.visitor li").all_text_contents()
-    info["client_info"] = await page.locator("ul.ac-items li").all_text_contents()
- 
+
+    cl_items = await page.locator("ul.ac-items li").all()
+    client_info = []
+    for item in cl_items:
+        parts = await item.evaluate("""el => {
+        return [...el.children].map(child => child.textContent.trim()).filter(t => t);
+        }""")
+        if parts:
+            client_info.append(parts)
+    info["client_info"]=client_info
+
+
     return info
 
 
@@ -193,6 +213,7 @@ async def scrape_jobs(base_url : str,
                       ) -> list:
 
     async with async_playwright() as p:
+        '''
         browser=await p.chromium.launch(
             headless=headless,
             args=[
@@ -212,6 +233,14 @@ async def scrape_jobs(base_url : str,
             viewport={"width": 1200, "height": 800},
             locale="en-US",
         )
+        '''
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=f"/home/{os.getenv('USER')}/.config/google-chrome",
+            headless=False,
+            channel="chromium",  # use real Chrome, not Chromium
+            args=["--disable-blink-features=AutomationControlled"],
+            ignore_default_args=["--enable-automation"],  # hides automation flag
+        )
 
 
         page=await context.new_page()
@@ -225,9 +254,7 @@ async def scrape_jobs(base_url : str,
                 
                 try:
                     await page.goto(url,wait_until="domcontentloaded", timeout=20000)
-                    #verification = await page.locator("span.cb-lb-t").count()
-                    #print(verification)
-                    await page.wait_for_timeout(3500000)
+                    await page.wait_for_timeout(3500)
                     await _dismiss_modal(page)
                 except Exception as exc:
                     print(f" ⚠️ Failed to load page {page_num}: {exc}")
@@ -295,7 +322,7 @@ async def scrape_jobs(base_url : str,
         finally:
             await page.close()  # Always clean up the page
             await context.close()
-            await browser.close()
+            #await browser.close()
 
         print(f" ✅ Done. Collected {len(collected)} jobs.")
         return collected
