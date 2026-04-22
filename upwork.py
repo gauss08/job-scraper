@@ -176,7 +176,7 @@ async def _read_details(page: Page) -> dict:
         return [...el.children].map(child => child.textContent.trim()).filter(t => t);
         }""")
         job_info.append(parts)
-    info['job_info']=job_info
+    info['job_info']=[j[::-1] for j in job_info]
 
 
     skills_locator= await page.locator("div.skills-list").first.inner_text()
