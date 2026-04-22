@@ -112,7 +112,7 @@ def build_search_url(
 # Page helpers
 # ---------------------------------------------------------------------------
 
-async def _dismiss_modal(page):
+async def _dismiss_modal(page : Page) -> None:
     """Attempt to close cookie banners or sign-in modals.
  
     Tries a small set of known CSS selectors, then falls back to pressing
@@ -128,7 +128,8 @@ async def _dismiss_modal(page):
 
     MODAL_DISMISS_SELECTORS = [
     # Generic dismiss buttons
-    'button.onetrust-close-btn-handler.banner-close-button'
+    'button.onetrust-close-btn-handler.banner-close-button',
+    'button.air3-modal-close.modal-header-close-button'
     ]
 
     for sel in MODAL_DISMISS_SELECTORS:
@@ -202,6 +203,27 @@ async def _read_details(page: Page) -> dict:
     return info
 
 
+# ---------------------------------------------------------------------------
+# Login 
+# ---------------------------------------------------------------------------
+
+async def login(page : Page, user_mail : str, password : str) -> None:
+
+    try:
+        login_url="https://www.upwork.com/ab/account-security/login"
+        await page.locator("#login_username").fill(user_mail)
+        await page.locator("#login_password_continue").click()
+        await page.wait_for_timeout(2000)
+        await page.locator("#login_password").fill(password)
+        await page.locator("#login_control_continue").click()
+        await page.wait_for_timeout(2000)
+        await _dismiss_modal(page)
+    except Exception as e:
+        print(f"Error : {e}")
+    
+
+
+
 
 # ---------------------------------------------------------------------------
 # Main scraper
@@ -209,6 +231,7 @@ async def _read_details(page: Page) -> dict:
 
 async def scrape_jobs(base_url : str,
                       max_results: int = 25,
+                      login : bool = True,
                       headless: bool = False,
                       ) -> list:
 
@@ -247,6 +270,12 @@ async def scrape_jobs(base_url : str,
         collected = []
         private_jobs=[]
         page_num=1
+
+        if login:
+            try:
+                pass
+            except Exception as e:
+                print(f" ⚠️ Failed to load page : Error {e}")
         
         try:
             while len(collected)<max_results:
@@ -389,6 +418,11 @@ async def _run_interactive() -> None:
     salary_type = _prompt_multi("Salary Type", SALARY_TYPE)
 
     sort_by = _prompt_multi("Sort By", SORT_BY, True)
+
+    login = input("Login y/n: ").strip().lowwer()
+    if login=='y':
+        user_mail = input("User mail: ").strip()
+        password = input("Password: ").strip()
 
 
     url=build_search_url(
