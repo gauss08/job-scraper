@@ -149,24 +149,27 @@ async def _dismiss_modal(page : Page) -> None:
         pass
 
 
-async def _read_details(page: Page) -> dict:
-
-
-
+async def _read_details(page : Page, login : bool = False) -> dict:
     info={}
 
     if await page.locator("div.reason-text").count()>0:
         return
 
     # -- Canonical URL -------------------------------------------------------
-    info["link"]=await page.locator("link[rel='canonical']").get_attribute('href')
-
-
+    if not login:
+        --info["link"]=await page.locator("link[rel='canonical']").get_attribute('href')
+    else:
+        href = await page.locator("div.text-body-sm a.up-n-link").first.get_attribute('href')
+        link = href.split('=')[-1]
+        info["link"] = f"https://www.upwork.com{link}"
 
     # -- Header fields -------------------------------------------------------
-    info["job_name"] = await page.locator('h1.m-0.h4').inner_text()
+    if not login:
+    --info["job_name"] = await page.locator('h1.m-0.h4').inner_text()
+
+
     info["location"] = await page.locator('p.text-light-on-muted.m-0').first.inner_text()
-    info["posted"] = await page.locator('div.mt-5').first.inner_text()
+    --info["posted"] = await page.locator('div.mt-5').first.inner_text()
     info["summary"]= await page.locator('div.break.mt-2').first.inner_text()
 
     #info["job_info"] = await page.locator("ul.features li").all_text_contents()
@@ -182,14 +185,18 @@ async def _read_details(page: Page) -> dict:
 
     skills_locator= await page.locator("div.skills-list").first.inner_text()
     skills=skills_locator.split('\n')
-    more_skills_locator = page.locator("div.skills-list").nth(1).locator('span')
-    more_skills_duplicated=await more_skills_locator.all_text_contents()
-    more_skills=set(more_skills_duplicated)
+
+    await page.locator("div.skills-list").count()>1:
+        more_skills_locator = page.locator("div.skills-list").nth(1).locator('span')
+        more_skills_duplicated=await more_skills_locator.all_text_contents()
+    more_skills=set(more_skills_duplicated) if more_skills_duplicated else None
     info["skills"]=skills[:-1]+list(more_skills) #in skills last one in --more skills 
 
-    info["activity_on_job"]= await page.locator("ul.visitor li").all_text_contents()
 
-    cl_items = await page.locator("ul.ac-items li").all()
+
+    --info["activity_on_job"]= await page.locator("ul.visitor li").all_text_contents()
+
+    --cl_items = await page.locator("ul.ac-items li").all()
     client_info = []
     for item in cl_items:
         parts = await item.evaluate("""el => {
@@ -207,10 +214,11 @@ async def _read_details(page: Page) -> dict:
 # Login 
 # ---------------------------------------------------------------------------
 
-async def login(page : Page, user_mail : str, password : str) -> None:
-
+async def _login(page : Page, user_mail : str, password : str) -> None:
     try:
+        print("Login page...")
         login_url="https://www.upwork.com/ab/account-security/login"
+        await page.goto(login_url,wait_until="domcontentloaded", timeout=20000)
         await page.locator("#login_username").fill(user_mail)
         await page.locator("#login_password_continue").click()
         await page.wait_for_timeout(2000)
@@ -218,6 +226,7 @@ async def login(page : Page, user_mail : str, password : str) -> None:
         await page.locator("#login_control_continue").click()
         await page.wait_for_timeout(2000)
         await _dismiss_modal(page)
+        #await page.close()
     except Exception as e:
         print(f"Error : {e}")
     
@@ -231,8 +240,10 @@ async def login(page : Page, user_mail : str, password : str) -> None:
 
 async def scrape_jobs(base_url : str,
                       max_results: int = 25,
-                      login : bool = True,
                       headless: bool = False,
+                      login : bool = False,
+                      user_mail : str = '',
+                      password : str = '',
                       ) -> list:
 
     async with async_playwright() as p:
@@ -273,7 +284,7 @@ async def scrape_jobs(base_url : str,
 
         if login:
             try:
-                pass
+                await _login(page,user_mail,password)
             except Exception as e:
                 print(f" ⚠️ Failed to load page : Error {e}")
         
@@ -331,7 +342,7 @@ async def scrape_jobs(base_url : str,
                             if await private.count()>0:
                                 private_jobs.append(full_link)
                             else:
-                                info=await _read_details(page)
+                                info=await _read_details(page, login)
                                 collected.append(info)
                                 progress.update(task, advance=1)
 
@@ -340,7 +351,7 @@ async def scrape_jobs(base_url : str,
                                 await page.wait_for_timeout(1200)
                                 await _dismiss_modal(page)
                             except Exception as e:
-                                await page.goto(url, wait_until="domcontentloaded", timeout=20_000)
+                                await page.goto(url, wait_until="domcontentloaded", timeout=20000)
                                 await page.wait_for_timeout(2_000)
                                 await _dismiss_modal(page)
                         except Exception as e:
@@ -419,10 +430,9 @@ async def _run_interactive() -> None:
 
     sort_by = _prompt_multi("Sort By", SORT_BY, True)
 
-    login = input("Login y/n: ").strip().lowwer()
-    if login=='y':
-        user_mail = input("User mail: ").strip()
-        password = input("Password: ").strip()
+    login = input("Login y/n: ").strip().lower()=='y'
+    user_mail = input("User mail: ").strip() if login else ""
+    password = input("Password: ").strip() if login else ""
 
 
     url=build_search_url(
@@ -438,7 +448,7 @@ async def _run_interactive() -> None:
 
     print(f" 🔅 URL : {url}")
 
-    jobs,private_jobs=await scrape_jobs(url,max_results=5)
+    jobs,private_jobs=await scrape_jobs(url,max_results=5,login=login, user_mail=user_mail, password=password)
 
     ts=datetime.now().strftime("%Y%m%d_%H%M%S")
     filename=f'upwork_jobs_{ts}.json'
