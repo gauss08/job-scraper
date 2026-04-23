@@ -195,7 +195,7 @@ async def _read_details(page : Page, login : bool = False) -> dict:
 
 
     else:
-        href = await page.locator("div.text-body-sm a.up-n-link").first.get_attribute('href')
+        href = await page.locator("section.mt-5 div.mt-2 input.air3-input").first.get_attribute('value')
         link = href.split('=')[-1]
         info["link"] = f"https://www.upwork.com{link}"
 
@@ -229,8 +229,8 @@ async def _read_details(page : Page, login : bool = False) -> dict:
                 client_info.append(parts)
         info["client_info"]=client_info
 
-        info["connects_required"] = await page.locator('div.text-light-on-muted.mt-5').inner_text()
-
+        connects_info = await page.locator('div.text-light-on-muted.mt-5').inner_text()
+        info["connects_required"] = connects_info.split('\n') 
 
     return info
 
@@ -455,7 +455,7 @@ async def _run_interactive() -> None:
 
     sort_by = _prompt_multi("Sort By", SORT_BY, True)
 
-    login = input("Login y/n: ").strip().lower()=='y'
+    login = input("Login y/n: ").strip().lower()[0]=='y'
     user_mail = input("User mail: ").strip() if login else ""
     password = input("Password: ").strip() if login else ""
 
@@ -481,9 +481,10 @@ async def _run_interactive() -> None:
         json.dump(jobs,f, indent=2, ensure_ascii=False)
     print(f"Saved {len(jobs)} jobs → {filename}")
 
-    with open(f'private_jobs_{ts}.json',"w",encoding="utf-8") as f:
-        json.dump(private_jobs,f, indent=2, ensure_ascii=False)
-    print(f"Saved {len(jobs)} Private jobs")
+    if not login and len(private_jobs)>0:
+        with open(f'private_jobs_{ts}.json',"w",encoding="utf-8") as f:
+            json.dump(private_jobs,f, indent=2, ensure_ascii=False)
+        print(f"Saved {len(private_jobs)} Private jobs")
 
 
 
