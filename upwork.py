@@ -152,59 +152,84 @@ async def _dismiss_modal(page : Page) -> None:
 async def _read_details(page : Page, login : bool = False) -> dict:
     info={}
 
-    if await page.locator("div.reason-text").count()>0:
-        return
-
-    # -- Canonical URL -------------------------------------------------------
     if not login:
-        --info["link"]=await page.locator("link[rel='canonical']").get_attribute('href')
+        if await page.locator("div.reason-text").count()>0: # if job is private
+            return
+
+        info["link"]=await page.locator("link[rel='canonical']").get_attribute('href')
+        info["job_name"] = await page.locator('h1.m-0.h4').inner_text()
+        info["location"] = await page.locator('p.text-light-on-muted.m-0').first.inner_text()
+        info["posted"] = await page.locator('div.mt-5').first.inner_text()
+        info["summary"]= await page.locator('div.break.mt-2').first.inner_text()
+
+
+        items = await page.locator("ul.features li").all()
+        job_info = []
+        for item in items:
+            parts = await item.evaluate("""el => {
+            return [...el.children].map(child => child.textContent.trim()).filter(t => t);
+            }""")
+            job_info.append(parts)
+        info['job_info']=[j[::-1] for j in job_info]
+
+
+        skills_locator= await page.locator("div.skills-list").first.inner_text()
+        skills=skills_locator.split('\n')
+        more_skills_locator = page.locator("div.skills-list").nth(1).locator('span')
+        more_skills_duplicated=await more_skills_locator.all_text_contents()
+        more_skills=set(more_skills_duplicated) if more_skills_duplicated else None
+        info["skills"]=skills[:-1]+list(more_skills) #in skills last one in --more skills 
+
+        info["activity_on_job"]= await page.locator("ul.visitor li").all_text_contents()
+
+        cl_items = await page.locator("ul.ac-items li").all()
+        client_info = []
+        for item in cl_items:
+            parts = await item.evaluate("""el => {
+            return [...el.children].map(child => child.textContent.trim()).filter(t => t);
+            }""")
+            if parts:
+                client_info.append(parts)
+        info["client_info"]=client_info
+
+
+
     else:
         href = await page.locator("div.text-body-sm a.up-n-link").first.get_attribute('href')
         link = href.split('=')[-1]
         info["link"] = f"https://www.upwork.com{link}"
 
-    # -- Header fields -------------------------------------------------------
-    if not login:
-    --info["job_name"] = await page.locator('h1.m-0.h4').inner_text()
+        info["job_name"] = await page.locator('h4.d-flex span.flex-1').inner_text()
+        info["location"] = await page.locator('p.text-light-on-muted.m-0').first.inner_text()
+        info["posted"] = await page.locator('div.text-light-on-muted span').first.inner_text()
+        info["summary"]= await page.locator('div.break.mt-2').first.inner_text()
+
+        items = await page.locator("ul.features li").all()
+        job_info = []
+        for item in items:
+            parts = await item.evaluate("""el => {
+            return [...el.children].map(child => child.textContent.trim()).filter(t => t);
+            }""")
+            job_info.append(parts)
+        info['job_info']=[j[::-1] for j in job_info]
+
+        skills_locator= await page.locator("div.skills-list").first.inner_text()
+        info["skills"]=skills_locator.split('\n')
+
+        info["activity_on_job"]= await page.locator("ul.client-activity-items li").all_text_contents()
 
 
-    info["location"] = await page.locator('p.text-light-on-muted.m-0').first.inner_text()
-    --info["posted"] = await page.locator('div.mt-5').first.inner_text()
-    info["summary"]= await page.locator('div.break.mt-2').first.inner_text()
+        cl_items = await page.locator("ul.features li").all()
+        client_info = []
+        for item in cl_items:
+            parts = await item.evaluate("""el => {
+            return [...el.children].map(child => child.textContent.trim()).filter(t => t);
+            }""")
+            if parts:
+                client_info.append(parts)
+        info["client_info"]=client_info
 
-    #info["job_info"] = await page.locator("ul.features li").all_text_contents()
-    items = await page.locator("ul.features li").all()
-    job_info = []
-    for item in items:
-        parts = await item.evaluate("""el => {
-        return [...el.children].map(child => child.textContent.trim()).filter(t => t);
-        }""")
-        job_info.append(parts)
-    info['job_info']=[j[::-1] for j in job_info]
-
-
-    skills_locator= await page.locator("div.skills-list").first.inner_text()
-    skills=skills_locator.split('\n')
-
-    await page.locator("div.skills-list").count()>1:
-        more_skills_locator = page.locator("div.skills-list").nth(1).locator('span')
-        more_skills_duplicated=await more_skills_locator.all_text_contents()
-    more_skills=set(more_skills_duplicated) if more_skills_duplicated else None
-    info["skills"]=skills[:-1]+list(more_skills) #in skills last one in --more skills 
-
-
-
-    --info["activity_on_job"]= await page.locator("ul.visitor li").all_text_contents()
-
-    --cl_items = await page.locator("ul.ac-items li").all()
-    client_info = []
-    for item in cl_items:
-        parts = await item.evaluate("""el => {
-        return [...el.children].map(child => child.textContent.trim()).filter(t => t);
-        }""")
-        if parts:
-            client_info.append(parts)
-    info["client_info"]=client_info
+        info["connects_required"] = await page.locator('div.text-light-on-muted.mt-5').inner_text()
 
 
     return info
@@ -224,7 +249,7 @@ async def _login(page : Page, user_mail : str, password : str) -> None:
         await page.wait_for_timeout(2000)
         await page.locator("#login_password").fill(password)
         await page.locator("#login_control_continue").click()
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(4000)
         await _dismiss_modal(page)
         #await page.close()
     except Exception as e:
