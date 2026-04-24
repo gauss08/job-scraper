@@ -20,8 +20,6 @@ Dependencies
 
 import asyncio
 import json
-import re
-import sys
 import os
 import argparse
 import getpass
@@ -29,12 +27,10 @@ from datetime import datetime
 from urllib.parse import quote_plus
 
 # rich provides a live progress bar while pages are being scraped
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TimeElapsedColumn
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn
 
 from playwright.async_api import (
     async_playwright,
-    Browser,
-    BrowserContext,
     Page,
 )
 
@@ -211,7 +207,7 @@ async def _dismiss_modal(page: Page) -> None:
         pass  # silently ignore if even Escape fails
 
 
-async def _read_details(page: Page, login: bool = False) -> dict | None:
+async def _read_details_public(page: Page) -> dict | None:
     """Scrape structured data from a single Upwork job page.
 
     Upwork renders a different DOM structure depending on whether the visitor
@@ -250,121 +246,124 @@ async def _read_details(page: Page, login: bool = False) -> dict | None:
     """
     info = {}
 
-    if not login:
-        # ── Logged-out (public) extraction path ──────────────────────────
+    # ── Logged-out (public) extraction path ──────────────────────────
 
-        # If this private-job indicator element exists, the page shows a
-        # "This job is private" message rather than actual job data.
-        if await page.locator("div.reason-text").count() > 0:
-            return None  # signal to the caller that the job is private
+    # If this private-job indicator element exists, the page shows a
+    # "This job is private" message rather than actual job data.
+    if await page.locator("div.reason-text").count() > 0:
+        return None  # signal to the caller that the job is private
 
-        # Canonical link gives us a clean, parameter-free URL
-        info["link"] = await page.locator("link[rel='canonical']").get_attribute("href")
+    # Canonical link gives us a clean, parameter-free URL
+    info["link"] = await page.locator("link[rel='canonical']").get_attribute("href")
 
-        info["job_name"] = await page.locator("h1.m-0.h4").inner_text()
+    info["job_name"] = await page.locator("h1.m-0.h4").inner_text()
 
-        # `.first` is used throughout because Upwork occasionally renders
-        # duplicate elements; we always want the primary / topmost one.
-        info["location"] = await page.locator("p.text-light-on-muted.m-0").first.inner_text()
-        info["posted"]   = await page.locator("div.mt-5").first.inner_text()
-        info["summary"]  = await page.locator("div.break.mt-2").first.inner_text()
+    # `.first` is used throughout because Upwork occasionally renders
+    # duplicate elements; we always want the primary / topmost one.
+    info["location"] = await page.locator("p.text-light-on-muted.m-0").first.inner_text()
+    info["posted"]   = await page.locator("div.mt-5").first.inner_text()
+    info["summary"]  = await page.locator("div.break.mt-2").first.inner_text()
 
-        # job_info: each <li> in ul.features contains child elements whose
-        # text forms a key-value pair (e.g. ["$500", "Fixed-price budget"]).
-        # We use evaluate() to extract all direct children in one round-trip.
-        items = await page.locator("ul.features li").all()
-        job_info = []
-        for item in items:
-            parts = await item.evaluate("""el => {
-                return [...el.children].map(child => child.textContent.trim()).filter(t => t);
-            }""")
-            job_info.append(parts)
-        # Reverse each pair so the order is consistently [value, label]
-        info["job_info"] = [j[::-1] for j in job_info]
+    # job_info: each <li> in ul.features contains child elements whose
+    # text forms a key-value pair (e.g. ["$500", "Fixed-price budget"]).
+    # We use evaluate() to extract all direct children in one round-trip.
+    items = await page.locator("ul.features li").all()
+    job_info = []
+    for item in items:
+        parts = await item.evaluate("""el => {
+            return [...el.children].map(child => child.textContent.trim()).filter(t => t);
+        }""")
+        job_info.append(parts)
+    # Reverse each pair so the order is consistently [value, label]
+    info["job_info"] = [j[::-1] for j in job_info]
 
-        # Primary skills list — split on newlines to get individual tags
-        skills_locator = await page.locator("div.skills-list").first.inner_text()
-        skills = skills_locator.split("\n")
+    # Primary skills list — split on newlines to get individual tags
+    skills_locator = await page.locator("div.skills-list").first.inner_text()
+    skills = skills_locator.split("\n")
 
-        # A second skills container may hold overflow tags hidden behind
-        # a "show more" toggle; use a set to deduplicate any repeated entries
-        more_skills_locator = page.locator("div.skills-list").nth(1).locator("span")
-        more_skills_duplicated = await more_skills_locator.all_text_contents()
-        more_skills = set(more_skills_duplicated) if more_skills_duplicated else set()
+    # A second skills container may hold overflow tags hidden behind
+    # a "show more" toggle; use a set to deduplicate any repeated entries
+    more_skills_locator = page.locator("div.skills-list").nth(1).locator("span")
+    more_skills_duplicated = await more_skills_locator.all_text_contents()
+    more_skills = set(more_skills_duplicated) if more_skills_duplicated else set()
 
-        # Drop the trailing empty string from the split, then merge overflow skills
-        info["skills"] = skills[:-1] + list(more_skills)
+    # Drop the trailing empty string from the split, then merge overflow skills
+    info["skills"] = skills[:-1] + list(more_skills)
 
-        # Proposal activity strings (e.g. "5 to 10", "Last viewed by client 1 day ago")
-        info["activity_on_job"] = await page.locator("ul.visitor li").all_text_contents()
+    # Proposal activity strings (e.g. "5 to 10", "Last viewed by client 1 day ago")
+    info["activity_on_job"] = await page.locator("ul.visitor li").all_text_contents()
 
-        # Client history items — same evaluate() pattern as job_info
-        cl_items = await page.locator("ul.ac-items li").all()
-        client_info = []
-        for item in cl_items:
-            parts = await item.evaluate("""el => {
-                return [...el.children].map(child => child.textContent.trim()).filter(t => t);
-            }""")
-            if parts:  # skip empty items produced by decorative list elements
-                client_info.append(parts)
-        info["client_info"] = client_info
+    # Client history items — same evaluate() pattern as job_info
+    cl_items = await page.locator("ul.ac-items li").all()
+    client_info = []
+    for item in cl_items:
+        parts = await item.evaluate("""el => {
+            return [...el.children].map(child => child.textContent.trim()).filter(t => t);
+        }""")
+        if parts:  # skip empty items produced by decorative list elements
+            client_info.append(parts)
+    info["client_info"] = client_info
 
-    else:
-        # ── Logged-in extraction path ─────────────────────────────────────
-        # Upwork shows a richer, account-specific view when authenticated.
-        # Several selectors differ from the public view.
+    return info
 
-        # The direct job link is embedded in an input element's value attribute
-        # in the format "?source=...&ref=/jobs/~<uid>"; we split on "=" to
-        # extract the relative path and prepend the base URL.
-        href = await page.locator("section.mt-5 div.mt-2 input.air3-input").first.get_attribute("value")
-        link = href.split("=")[-1]
-        info["link"] = f"https://www.upwork.com{link}"
+async def _read_detail_auth(page : Page) -> dict:
+    # ── Logged-in extraction path ─────────────────────────────────────
+    # Upwork shows a richer, account-specific view when authenticated.
+    # Several selectors differ from the public view.
 
-        # Logged-in job title sits in a different heading element
-        info["job_name"] = await page.locator("h4.d-flex span.flex-1").inner_text()
-        info["location"] = await page.locator("p.text-light-on-muted.m-0").first.inner_text()
+    # The direct job link is embedded in an input element's value attribute
+    # in the format "?source=...&ref=/jobs/~<uid>"; we split on "=" to
+    # extract the relative path and prepend the base URL.
+    info = {}
 
-        # Posting time is inside a span rather than a standalone div
-        info["posted"]  = await page.locator("div.text-light-on-muted span").first.inner_text()
-        info["summary"] = await page.locator("div.break.mt-2").first.inner_text()
+    href = await page.locator("section.mt-5 div.mt-2 input.air3-input").first.get_attribute("value")
+    link = href.split("=")[-1]
+    info["link"] = f"https://www.upwork.com{link}"
 
-        # job_info extraction is identical to the logged-out path
-        items = await page.locator("ul.features li").all()
-        job_info = []
-        for item in items:
-            parts = await item.evaluate("""el => {
-                return [...el.children].map(child => child.textContent.trim()).filter(t => t);
-            }""")
-            job_info.append(parts)
-        info["job_info"] = [j[::-1] for j in job_info]
+    # Logged-in job title sits in a different heading element
+    info["job_name"] = await page.locator("h4.d-flex span.flex-1").inner_text()
+    info["location"] = await page.locator("p.text-light-on-muted.m-0").first.inner_text()
 
-        # When logged in, the skills container doesn't have an overflow section
-        skills_locator = await page.locator("div.skills-list").first.inner_text()
-        info["skills"] = [s for s in skills_locator.split("\n") if s.strip()]
+    # Posting time is inside a span rather than a standalone div
+    info["posted"]  = await page.locator("div.text-light-on-muted span").first.inner_text()
+    info["summary"] = await page.locator("div.break.mt-2").first.inner_text()
 
-        # Different list class for proposal activity in the authenticated view
-        info["activity_on_job"] = await page.locator("ul.client-activity-items li").all_text_contents()
+    # job_info extraction is identical to the logged-out path
+    items = await page.locator("ul.features li").all()
+    job_info = []
+    for item in items:
+        parts = await item.evaluate("""el => {
+            return [...el.children].map(child => child.textContent.trim()).filter(t => t);
+        }""")
+        job_info.append(parts)
+    info["job_info"] = [j[::-1] for j in job_info]
 
-        # Reuse ul.features for client info in the logged-in layout
-        cl_items = await page.locator("ul.features li").all()
-        client_info = []
-        for item in cl_items:
-            parts = await item.evaluate("""el => {
-                return [...el.children].map(child => child.textContent.trim()).filter(t => t);
-            }""")
-            if parts:
-                client_info.append(parts)
-        info["client_info"] = client_info
+    # When logged in, the skills container doesn't have an overflow section
+    skills_locator = await page.locator("div.skills-list").first.inner_text()
+    info["skills"] = [s for s in skills_locator.split("\n") if s.strip()]
 
-        # Exclusive to the logged-in view: how many Connects this job costs
-        sel = ["mt-4", "mt-5"]
-        for s in sel:
-            try:
-                connects_info = await page.locator(f"div.text-light-on-muted.{s}").inner_text()
-                info["connects_required"] = connects_info.split("\n")
-            except Exception as e:
-                pass
+    # Different list class for proposal activity in the authenticated view
+    info["activity_on_job"] = await page.locator("ul.client-activity-items li").all_text_contents()
+
+    # Reuse ul.features for client info in the logged-in layout
+    cl_items = await page.locator("ul.features li").all()
+    client_info = []
+    for item in cl_items:
+        parts = await item.evaluate("""el => {
+            return [...el.children].map(child => child.textContent.trim()).filter(t => t);
+        }""")
+        if parts:
+            client_info.append(parts)
+    info["client_info"] = client_info
+
+    # Exclusive to the logged-in view: how many Connects this job costs
+    sel = ["mt-4", "mt-5"]
+    for s in sel:
+        try:
+            connects_info = await page.locator(f"div.text-light-on-muted.{s}").inner_text()
+            info["connects_required"] = connects_info.split("\n")
+        except Exception as e:
+            pass
 
     return info
 
@@ -426,7 +425,7 @@ async def _login(page: Page, user_mail: str, password: str) -> None:
 
 async def scrape_jobs(
     base_url: str,
-    max_results: int = 25,
+    max_results: int = 5,
     headless: bool = False,
     login: bool = False,
     user_mail: str = "",
@@ -550,15 +549,21 @@ async def scrape_jobs(
 
                             # Check for the "private job" heading that Upwork shows
                             # when a listing requires login to view in full
-                            private = page.locator("h4.display-rebrand")
-                            if await private.count() > 0:
-                                # Record the URL so the caller can report / retry with login
-                                private_jobs.append(full_link)
-                            else:
-                                info = await _read_details(page, login)
+                            if login:
+                                info = await _read_details_auth(page, login)
                                 if info:
                                     collected.append(info)
                                 progress.update(task, advance=1)
+                            else:
+                                private = page.locator("h4.display-rebrand")
+                                if await private.count() > 0:
+                                    # Record the URL so the caller can report / retry with login
+                                    private_jobs.append(full_link)
+                                else:
+                                    info = await _read_details_public(page, login)
+                                    if info:
+                                        collected.append(info)
+                                    progress.update(task, advance=1)
 
                             # Navigate back to the results page for the next iteration.
                             # If go_back() fails (e.g. navigation stack is empty), fall
@@ -669,6 +674,8 @@ async def _run_interactive() -> None:
 
     # Sort order is a single-choice menu (not multi-select)
     sort_by = _prompt_multi("Sort By", SORT_BY, single=True)
+    
+    max_results = int(input("Max results [25]: ").strip() or 5)
 
     # Optionally authenticate — required to see private jobs and Connects cost
     login = input("Login y/n: ").strip().lower().startswith("y")
@@ -692,7 +699,7 @@ async def _run_interactive() -> None:
     # Run the scraper (hard-coded to 5 results for the interactive demo)
     jobs, private_jobs = await scrape_jobs(
         url,
-        max_results=5,
+        max_results=max_results,
         login=login,
         user_mail=user_mail,
         password=password,
