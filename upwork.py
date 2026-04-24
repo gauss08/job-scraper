@@ -24,6 +24,7 @@ import re
 import sys
 import os
 import argparse
+import getpass
 from datetime import datetime
 from urllib.parse import quote_plus
 
@@ -340,7 +341,7 @@ async def _read_details(page: Page, login: bool = False) -> dict | None:
 
         # When logged in, the skills container doesn't have an overflow section
         skills_locator = await page.locator("div.skills-list").first.inner_text()
-        info["skills"] = skills_locator.split("\n")
+        info["skills"] = [s for s in skills_locator.split("\n") if s.strip()]
 
         # Different list class for proposal activity in the authenticated view
         info["activity_on_job"] = await page.locator("ul.client-activity-items li").all_text_contents()
@@ -357,8 +358,13 @@ async def _read_details(page: Page, login: bool = False) -> dict | None:
         info["client_info"] = client_info
 
         # Exclusive to the logged-in view: how many Connects this job costs
-        connects_info = await page.locator("div.text-light-on-muted.mt-5").inner_text()
-        info["connects_required"] = connects_info.split("\n")
+        sel = ["mt-4", "mt-5"]
+        for s in sel:
+            try:
+                connects_info = await page.locator(f"div.text-light-on-muted.{s}").inner_text()
+                info["connects_required"] = connects_info.split("\n")
+            except Exception as e:
+                pass
 
     return info
 
@@ -391,14 +397,14 @@ async def _login(page: Page, user_mail: str, password: str) -> None:
         login_url = "https://www.upwork.com/ab/account-security/login"
 
         # Step 1: load the login page
-        await page.goto(login_url, wait_until="domcontentloaded", timeout=20000)
+        await page.goto(login_url, wait_until="domcontentloaded", timeout=15000)
 
         # Step 2: enter email and advance to the password step
         await page.locator("#login_username").fill(user_mail)
         await page.locator("#login_password_continue").click()
 
         # Wait for the password field to appear (Upwork uses a two-screen flow)
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(3500)
 
         # Step 3: enter password and submit
         await page.locator("#login_password").fill(password)
@@ -491,7 +497,7 @@ async def scrape_jobs(
 
                 # ── Load the search results page ──────────────────────────
                 try:
-                    await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                    await page.goto(url, wait_until="domcontentloaded", timeout=15000)
                     # Extra wait for dynamic content to finish rendering
                     await page.wait_for_timeout(3500)
                     await _dismiss_modal(page)
@@ -517,9 +523,9 @@ async def scrape_jobs(
                         # then drop the "/jobs/~" prefix and rebuild as an apply URL.
                         href = await cards.nth(i).locator("a").nth(0).get_attribute("href", timeout=2000)
                         if href:
-                            link = href.split("?")[0][6:]  # remove query string and leading "/jobs/"
+                            link = href.split("?")[0]  # remove query string and leading "/jobs/"
                             if link:
-                                hrefs.append("https://www.upwork.com/freelance-jobs/apply/" + link)
+                                hrefs.append("https://www.upwork.com" + link)
                     except Exception:
                         continue  # skip cards where the link is inaccessible
 
@@ -550,7 +556,8 @@ async def scrape_jobs(
                                 private_jobs.append(full_link)
                             else:
                                 info = await _read_details(page, login)
-                                collected.append(info)
+                                if info:
+                                    collected.append(info)
                                 progress.update(task, advance=1)
 
                             # Navigate back to the results page for the next iteration.
@@ -664,9 +671,9 @@ async def _run_interactive() -> None:
     sort_by = _prompt_multi("Sort By", SORT_BY, single=True)
 
     # Optionally authenticate — required to see private jobs and Connects cost
-    login = input("Login y/n: ").strip().lower()[0] == "y"
+    login = input("Login y/n: ").strip().lower().startswith("y")
     user_mail = input("User mail: ").strip() if login else ""
-    password  = input("Password: ").strip()  if login else ""
+    password  = getpass.getpass("Password: ").strip()  if login else ""
 
     # Assemble the search URL from all gathered parameters
     url = build_search_url(
