@@ -630,9 +630,10 @@ def _prompt_multi(label: str, mapping: dict, single: bool = False) -> list | str
     for k, v in enumerate(mapping.keys(), 1):
         temp[k] = v
         print(f"  {k} : {v}")
-
-    raw = input(f"{label} (comma-separated, or blank to skip): ").strip()
-
+    while True:
+        raw = input(f"{label} (comma-separated, or blank for Any): ").strip()
+        if raw=="" or int(raw) in range(1,len(mapping.keys())+1):
+            break
     if not raw:
         return None  # blank input = "no preference" → filter will be omitted
 
