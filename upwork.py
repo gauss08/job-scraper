@@ -81,6 +81,9 @@ SALARY_TYPE = {
     "Fixed-Price": "1",  # fixed budget for the whole project
 }
 
+BASE_SEARCH_URL = "https://www.upwork.com/nx/search/jobs/?nbs=1&"
+TIMEOUT_PAGE_LOAD = 15000
+TIMEOUT_COOL_DOWN = 3500
 
 # ---------------------------------------------------------------------------
 # URL builder
@@ -156,12 +159,12 @@ def build_search_url(
     params["sort"] = SORT_BY[sort_by] if sort_by else "relevance,desc"
 
     # nbs=1 enables the newer search UI that this scraper's selectors target
-    base = "https://www.upwork.com/nx/search/jobs/?nbs=1&"
+    #base = "https://www.upwork.com/nx/search/jobs/?nbs=1&"
 
     # URL-encode each value so special characters don't break the query string
     query = "&".join(f"{k}={quote_plus(v)}" for k, v in params.items())
 
-    return f"{base}{query}"
+    return f"{BASE_SEARCH_URL}{query}"
 
 
 # ---------------------------------------------------------------------------
@@ -192,9 +195,9 @@ async def _dismiss_modal(page: Page) -> None:
         try:
             btn = page.locator(sel).first
             # Use a short timeout so we don't stall if the element isn't present
-            if await btn.is_visible(timeout=1000):
+            if await btn.is_visible(timeout=TIMEOUT_COOL_DOWN):
                 await btn.click()
-                await page.wait_for_timeout(300)  # brief pause for the modal animation
+                await page.wait_for_timeout(TIMEOUT_COOL_DOWN)  # brief pause for the modal animation
                 return
         except Exception:
             pass  # selector not found or click failed — try the next one
@@ -202,7 +205,7 @@ async def _dismiss_modal(page: Page) -> None:
     # Last-resort fallback: pressing Escape closes most modals
     try:
         await page.keyboard.press("Escape")
-        await page.wait_for_timeout(300)
+        await page.wait_for_timeout(TIMEOUT_COOL_DOWN)
     except Exception:
         pass  # silently ignore if even Escape fails
 
@@ -396,21 +399,21 @@ async def _login(page: Page, user_mail: str, password: str) -> None:
         login_url = "https://www.upwork.com/ab/account-security/login"
 
         # Step 1: load the login page
-        await page.goto(login_url, wait_until="domcontentloaded", timeout=15000)
+        await page.goto(login_url, wait_until="domcontentloaded", timeout=TIMEOUT_PAGE_LOAD)
 
         # Step 2: enter email and advance to the password step
         await page.locator("#login_username").fill(user_mail)
         await page.locator("#login_password_continue").click()
 
         # Wait for the password field to appear (Upwork uses a two-screen flow)
-        await page.wait_for_timeout(3500)
+        await page.wait_for_timeout(TIMEOUT_COOL_DOWN)
 
         # Step 3: enter password and submit
         await page.locator("#login_password").fill(password)
         await page.locator("#login_control_continue").click()
 
         # Allow time for the post-login redirect and session cookies to settle
-        await page.wait_for_timeout(4000)
+        await page.wait_for_timeout(TIMEOUT_COOL_DOWN)
 
         # Dismiss any welcome modal or cookie banner that appears after login
         await _dismiss_modal(page)
@@ -496,9 +499,9 @@ async def scrape_jobs(
 
                 # ── Load the search results page ──────────────────────────
                 try:
-                    await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                    await page.goto(url, wait_until="domcontentloaded", timeout=TIMEOUT_PAGE_LOAD)
                     # Extra wait for dynamic content to finish rendering
-                    await page.wait_for_timeout(3500)
+                    await page.wait_for_timeout(TIMEOUT_COOL_DOWN)
                     await _dismiss_modal(page)
                 except Exception as exc:
                     print(f" ⚠️ Failed to load page {page_num}: {exc}")
@@ -520,7 +523,7 @@ async def scrape_jobs(
                         # The apply link is always the first <a> inside the card.
                         # Strip query params (tracking tokens) to get a clean URL,
                         # then drop the "/jobs/~" prefix and rebuild as an apply URL.
-                        href = await cards.nth(i).locator("a").nth(0).get_attribute("href", timeout=2000)
+                        href = await cards.nth(i).locator("a").nth(0).get_attribute("href", timeout=TIMEOUT_COOL_DOWN)
                         if href:
                             link = href.split("?")[0]  # remove query string and leading "/jobs/"
                             if link:
@@ -545,7 +548,7 @@ async def scrape_jobs(
                             break  # we've hit the requested cap — stop early
 
                         try:
-                            await page.goto(full_link, wait_until="domcontentloaded", timeout=15000)
+                            await page.goto(full_link, wait_until="domcontentloaded", timeout=TIMEOUT_PAGE_LOAD)
 
                             # Check for the "private job" heading that Upwork shows
                             # when a listing requires login to view in full
@@ -560,7 +563,7 @@ async def scrape_jobs(
                                     # Record the URL so the caller can report / retry with login
                                     private_jobs.append(full_link)
                                 else:
-                                    info = await _read_details_public(page, login)
+                                    info = await _read_details_public(page)
                                     if info:
                                         collected.append(info)
                                     progress.update(task, advance=1)
@@ -569,13 +572,13 @@ async def scrape_jobs(
                             # If go_back() fails (e.g. navigation stack is empty), fall
                             # back to a fresh goto() of the search results URL.
                             try:
-                                await page.go_back(wait_until="domcontentloaded", timeout=8000)
-                                await page.wait_for_timeout(1200)  # brief cool-down between requests
+                                await page.go_back(wait_until="domcontentloaded", timeout=TIMEOUT_PAGE_LOAD)
+                                await page.wait_for_timeout(TIMEOUT_COOL_DOWN)  # brief cool-down between requests
                                 await _dismiss_modal(page)
                             except Exception:
                                 # Fallback: reload the search page directly
-                                await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-                                await page.wait_for_timeout(2000)
+                                await page.goto(url, wait_until="domcontentloaded", timeout=TIMEOUT_PAGE_LOAD)
+                                await page.wait_for_timeout(TIMEOUT_COOL_DOWN)
                                 await _dismiss_modal(page)
 
                         except Exception as e:
