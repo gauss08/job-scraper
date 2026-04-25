@@ -24,6 +24,7 @@ import os
 import sys
 import argparse
 import getpass
+import re
 from datetime import datetime
 from urllib.parse import quote_plus
 
@@ -83,8 +84,8 @@ SALARY_TYPE = {
 }
 
 BASE_SEARCH_URL = "https://www.upwork.com/nx/search/jobs/?nbs=1&"
-TIMEOUT_PAGE_LOAD = 5000
-TIMEOUT_COOL_DOWN = 2500
+TIMEOUT_PAGE_LOAD = 15000
+TIMEOUT_COOL_DOWN = 3500
 
 # ---------------------------------------------------------------------------
 # URL builder
@@ -415,6 +416,10 @@ async def _login(page: Page, user_mail: str, password: str) -> None:
         await page.locator("#login_password").fill(password)
         await page.locator("#login_control_continue").click()
 
+        pass_message = await page.locator("#password-message").inner_text()
+        if pass_message == "Username or password is incorrect.":
+            return False
+
         # Allow time for the post-login redirect and session cookies to settle
         await page.wait_for_timeout(TIMEOUT_COOL_DOWN)
 
@@ -422,8 +427,9 @@ async def _login(page: Page, user_mail: str, password: str) -> None:
         await _dismiss_modal(page)
 
     except Exception as e:
-        print(f"Error : {e}")
-
+        print("Error : {e}")
+    
+    return True
 
 # ---------------------------------------------------------------------------
 # Main scraper
@@ -490,9 +496,18 @@ async def scrape_jobs(
         # Optionally authenticate before starting the scrape loop
         if login:
             try:
-                await _login(page, user_mail, password)
+                login = await _login(page, user_mail, password)
+                if login:
+                    print(" ✅ Login Successfully")
+                else:
+                    print(" ❌ Username or password is incorrect.")
+                    search_public_jobs = input("Start public job search ? y/n : ").strip().lower().startswith("y")
+                    if not search_public_jobs:
+                        print("❌ Search Stopped.")
+                        return collected, private_jobs #avoid unpack error
             except Exception as e:
                 print(f" ⚠️ Failed to load page : Error {e}")
+
 
         try:
             while len(collected) < max_results:
@@ -736,10 +751,11 @@ async def _run(
     # Derive output filename: use the caller-supplied name or generate one
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = output if output else f"upwork_jobs_{ts}.json"
- 
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(jobs, f, indent=2, ensure_ascii=False)
-    print(f"Saved {len(jobs)} jobs → {filename}")
+    
+    if len(jobs)>0:
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(jobs, f, indent=2, ensure_ascii=False)
+        print(f"Saved {len(jobs)} jobs → {filename}")
  
     # Private job URLs are always written to a separate sidecar file so the
     # caller can retry them later with --login
@@ -777,9 +793,25 @@ async def _run_interactive() -> None:
  
     # startswith("y") is safe against an empty string (unlike [0] indexing)
     login     = input("Login? (y/n): ").strip().lower().startswith("y")
-    user_mail = input("User mail: ").strip() if login else ""
-    # getpass hides the password as the user types — no terminal echo
-    password  = getpass.getpass("Password: ")  if login else ""
+
+    if login:
+        while True:
+            pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            user_mail = input("User mail: ").strip() if login else ""
+            if not re.fullmatch(pattern, user_mail):
+                print(" ⚠️ Enter valit email address")
+                continue
+            break
+
+        # getpass hides the password as the user types — no terminal echo
+        while True:
+            password  = getpass.getpass("Password: ")  if login else ""
+            if  password:
+                break
+            print(" ⚠️ Enter password")
+    else:
+        user_mail = ""
+        password = ""
  
     await _run(
         keywords=keywords,
