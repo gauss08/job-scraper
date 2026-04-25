@@ -548,25 +548,27 @@ async def scrape_jobs(
                             break  # we've hit the requested cap — stop early
 
                         try:
-                            await page.goto(full_link, wait_until="domcontentloaded", timeout=TIMEOUT_PAGE_LOAD)
+                            for i in range(5): # retry 5 times, if fails
+                                await page.goto(full_link, wait_until="domcontentloaded", timeout=TIMEOUT_PAGE_LOAD)
 
-                            # Check for the "private job" heading that Upwork shows
-                            # when a listing requires login to view in full
-                            if login:
-                                info = await _read_details_auth(page, login)
-                                if info:
-                                    collected.append(info)
-                                progress.update(task, advance=1)
-                            else:
-                                private = page.locator("h4.display-rebrand")
-                                if await private.count() > 0:
-                                    # Record the URL so the caller can report / retry with login
-                                    private_jobs.append(full_link)
-                                else:
-                                    info = await _read_details_public(page)
+                                # Check for the "private job" heading that Upwork shows
+                                # when a listing requires login to view in full
+                                if login:
+                                    info = await _read_details_auth(page, login)
                                     if info:
                                         collected.append(info)
                                     progress.update(task, advance=1)
+                                else:
+                                    private = page.locator("h4.display-rebrand")
+                                    if await private.count() > 0:
+                                        # Record the URL so the caller can report / retry with login
+                                        private_jobs.append(full_link)
+                                    else:
+                                        info = await _read_details_public(page)
+                                        if info:
+                                            collected.append(info)
+                                        progress.update(task, advance=1)
+                                break
 
                             # Navigate back to the results page for the next iteration.
                             # If go_back() fails (e.g. navigation stack is empty), fall
