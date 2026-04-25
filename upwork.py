@@ -83,8 +83,8 @@ SALARY_TYPE = {
 }
 
 BASE_SEARCH_URL = "https://www.upwork.com/nx/search/jobs/?nbs=1&"
-TIMEOUT_PAGE_LOAD = 10000
-TIMEOUT_COOL_DOWN = 3500
+TIMEOUT_PAGE_LOAD = 5000
+TIMEOUT_COOL_DOWN = 2500
 
 # ---------------------------------------------------------------------------
 # URL builder
@@ -364,10 +364,12 @@ async def _read_details_auth(page : Page) -> dict:
     sel = ["mt-4", "mt-5"]
     for s in sel:
         try:
+            if await page.locator(f"div.text-light-on-muted.{s}").count()==0:
+                continue
             connects_info = await page.locator(f"div.text-light-on-muted.{s}").inner_text()
             info["connects_required"] = connects_info.split("\n")
         except Exception as e:
-            pass
+            print(f"Error : {e}")
 
     return info
 
