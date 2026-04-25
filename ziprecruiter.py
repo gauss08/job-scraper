@@ -125,6 +125,21 @@ async def _dismiss_modal(page):
     page:
         The Playwright :class:`~playwright.async_api.Page` to operate on.
     """
+    MODAL_DISMISS_SELECTORS = [
+        "button._r_1k_",
+    ]
+
+    for sel in MODAL_DISMISS_SELECTORS:
+        try:
+            btn = page.locator(sel).first
+            # Use a short timeout so we don't stall if the element isn't present
+            if await btn.is_visible(timeout=TIMEOUT_COOL_DOWN):
+                await btn.click()
+                await page.wait_for_timeout(TIMEOUT_COOL_DOWN)  # brief pause for the modal animation
+                return
+        except Exception:
+            pass  # selector not found or click failed — try the next one
+
 
     try:
         await page.keyboard.press("Escape")
@@ -133,8 +148,20 @@ async def _dismiss_modal(page):
         pass
 
 async def _read_details(page: Page) -> dict:
-    pass
+    info = {}
 
+    info['job_url'] = await page.locator("div.flex.w-full.flex-row.justify-between a.inline-flex").first.get_attribute("href")
+
+    info['job_title'] = await page.locator("div.w-full div.grid h2.font-bold").inner_text()
+    info['company_name'] = await page.locator("div.w-full div.grid a").inner_text()
+    info['location'] = await page.locator("div.w-full div.grid div.mb-24 ").inner_text()
+
+    info['info'] = await page.locator("div.w-full div.flex.flex-col.gap-y-8").inner_text()
+
+    info['job_description'] = await page.locator("div.w-full div.flex.flex-col.gap-y-[16px]").inner_text() #div.w-full div.flex.flex-col.gap-y-\[16px\]
+
+    return info
+    
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +206,60 @@ def _prompt_multi(label: str, mapping: dict, single: bool = True) -> list | None
         print(f"Could not parse '{raw}' — skipping {label} filter.")
         return None
 
+
+# ─────────────────────────────────────────────
+#  Scraper
+# ─────────────────────────────────────────────
+
+
+async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, fetch_descriptions: bool = True,) -> list:
+    jobs=[]
+
+    async with async_playwright() as p:
+        browser=await p.chromium.launch(
+            headless=headless,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
+        )
+    
+        context=await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1200, "height": 800},
+            locale="en-US",
+        )
+
+        page=await context.new_page()
+        
+        try:
+            print(f" 🔅 Opening : {url[:90]}...")
+            await page.goto(url,wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_timeout(3500)
+            await _dismiss_modal(page)
+
+            
+            # Parse job cards
+            cards = await page.locator("div.job_result_two_pane_v2")
+
+            
+            print(f" ❇️  Found {len(cards)} raw cards, extracting up to {max_results}...")
+            
+
+        except PlaywrightTimeoutError:
+            print("  ✗ Timeout – LinkedIn took too long to respond.")
+        except Exception as e:
+            print(f"  ✗ Error: {e}")
+        finally:
+            await browser.close()
+
+    return jobs
 
 
 # ---------------------------------------------------------------------------
