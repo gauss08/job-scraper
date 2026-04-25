@@ -526,7 +526,7 @@ async def scrape_jobs(
                         href = await cards.nth(i).locator("a").nth(0).get_attribute("href", timeout=TIMEOUT_COOL_DOWN)
                         if href:
                             link = href.split("?")[0]  # remove query string and leading "/jobs/"
-                            if link:
+                            if link and not link in hrefs:
                                 hrefs.append("https://www.upwork.com" + link)
                     except Exception:
                         continue  # skip cards where the link is inaccessible
