@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 import sys
+import os
 import argparse
 from datetime import datetime
 from urllib.parse import quote_plus
@@ -153,12 +154,12 @@ async def _read_details(page: Page) -> dict:
     info['job_url'] = await page.locator("div.flex.w-full.flex-row.justify-between a.inline-flex").first.get_attribute("href")
 
     info['job_title'] = await page.locator("div.w-full div.grid h2.font-bold").inner_text()
-    info['company_name'] = await page.locator("div.w-full div.grid a").inner_text()
-    info['location'] = await page.locator("div.w-full div.grid div.mb-24 ").inner_text()
+    info['company_name'] = await page.locator("div.w-full div.grid a").first.inner_text()
+    info['location'] = await page.locator("div.w-full div.grid div.mb-24 ").first.inner_text()
 
-    info['info'] = await page.locator("div.w-full div.flex.flex-col.gap-y-8").inner_text()
+    info['info'] = await page.locator("div.w-full div.flex.flex-col.gap-y-8").first.inner_text()
 
-    info['job_description'] = await page.locator("div.w-full div.flex.flex-col.gap-y-[16px]").inner_text() #div.w-full div.flex.flex-col.gap-y-\[16px\]
+    info['job_description'] = await page.locator("div.w-full div.flex.flex-col.gap-y-\[16px\]").inner_text() #div.w-full div.flex.flex-col.gap-y-\[16px\]
 
     return info
     
@@ -212,28 +213,17 @@ def _prompt_multi(label: str, mapping: dict, single: bool = True) -> list | None
 # ─────────────────────────────────────────────
 
 
-async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, fetch_descriptions: bool = True,) -> list:
+async def scrape_jobs(url : str, max_results: int = 25, headless: bool = False, fetch_descriptions: bool = True,) -> list:
     jobs=[]
 
     async with async_playwright() as p:
-        browser=await p.chromium.launch(
-            headless=headless,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled",
-            ],
-        )
-    
-        context=await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/122.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1200, "height": 800},
-            locale="en-US",
+
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir=f"/home/{os.getenv('USER')}/.config/google-chrome",
+            headless=False,                                  # always show the window
+            channel="chromium",                              # use real Chromium binary
+            args=["--disable-blink-features=AutomationControlled"],
+            ignore_default_args=["--enable-automation"],     # hides the "automated" banner
         )
 
         page=await context.new_page()
@@ -246,18 +236,22 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = True, f
 
             
             # Parse job cards
-            cards = await page.locator("div.job_result_two_pane_v2")
+            cards =  await page.locator("div.job_result_two_pane_v2").all()
 
-            
             print(f" ❇️  Found {len(cards)} raw cards, extracting up to {max_results}...")
-            
 
-        except PlaywrightTimeoutError:
-            print("  ✗ Timeout – LinkedIn took too long to respond.")
+            for card in cards:
+                await card.click()
+                await _dismiss_modal(page)
+                info = await _read_details(page)
+                jobs.append(info)
+
+
         except Exception as e:
             print(f"  ✗ Error: {e}")
         finally:
-            await browser.close()
+            await page.close()
+            await context.close()
 
     return jobs
 
@@ -306,6 +300,19 @@ async def _run_interactive() -> None:
     )
 
     print(f"Full URL : {url}")
+    jobs = await scrape_jobs(
+        url,
+        max_results=20,
+    )
+ 
+    # Derive output filename: use the caller-supplied name or generate one
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"ziprecruiter_jobs_{ts}.json"
+    
+    if len(jobs)>0:
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(jobs, f, indent=2, ensure_ascii=False)
+        print(f"Saved {len(jobs)} jobs → {filename}")
 
 
 if __name__=="__main__":
