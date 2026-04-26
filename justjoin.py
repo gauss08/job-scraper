@@ -314,7 +314,7 @@ async def _read_details(page: Page) -> dict:
 
 async def scrape_jobs(url : str,
                       max_results: int = 50,
-                      headless: bool = True,
+                      headless: bool = False,
                       ) -> list:
     """Scrape job listings from a JustJoin.it search URL.
  
