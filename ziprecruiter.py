@@ -721,13 +721,46 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Output JSON filename. Auto-timestamped when omitted.",
     )
     parser.add_argument(
+        "--date-filter", "-d",
+        choices=list(DATE_FILTER.keys()),
+        default=None,
+        metavar="RANGE",
+        help=(
+            "How recently the job was posted. "
+            f"Choices: {', '.join(repr(k) for k in DATE_FILTER)}."
+        ),
+    )
+    parser.add_argument(
+        "--apply-type", "-a",
+        choices=list(APPLY_TYPE.keys()),
+        default=None,
+        metavar="TYPE",
+        help=(
+            "Application method filter. "
+            f"Choices: {', '.join(repr(k) for k in APPLY_TYPE)}."
+        ),
+    )
+    parser.add_argument(
+        "--experience",
+        nargs="+",
+        choices=list(EXPERIENCE.keys()),
+        default=None,
+        metavar="LEVEL",
+        help=(
+            "Experience level(s); repeat or space-separate for multi-select. "
+            f"Choices: {', '.join(repr(k) for k in EXPERIENCE)}."
+        ),
+    )
+    parser.add_argument(
         "--work-mode", "-w",
         choices=list(WORK_MODE.keys()),
+        default=None,
         help="Remote / hybrid / on-site filter.",
     )
     parser.add_argument(
         "--employment-type", "-e",
         choices=list(EMPLOYMENT_TYPE.keys()),
+        default=None,
         help="Employment type filter.",
     )
     parser.add_argument(
@@ -785,12 +818,17 @@ async def _run(args: argparse.Namespace) -> None:
         print("-" * _CLI_WIDTH)
         location = input("Location (blank = USA): ").strip()
 
-    # --- Filters always collected interactively ---------------------------
-    date_filter = _prompt_multi("Date Filter",      DATE_FILTER)
-    apply_type  = _prompt_multi("Apply Type",       APPLY_TYPE)
-    experience  = _prompt_multi("Experience level", EXPERIENCE, single=False)
-
-    # --- Filters that may come from CLI or interactive prompt -------------
+    # --- Filters: use CLI value when supplied, otherwise prompt interactively
+    date_filter: str | None = args.date_filter or _prompt_multi(
+        "Date Filter", DATE_FILTER
+    )
+    apply_type: str | None = args.apply_type or _prompt_multi(
+        "Apply Type", APPLY_TYPE
+    )
+    # --experience accepts one or more space-separated values (nargs="+")
+    experience: list[str] | None = args.experience or _prompt_multi(
+        "Experience level", EXPERIENCE, single=False
+    )
     employment_type: str | None = args.employment_type or _prompt_multi(
         "Employment type", EMPLOYMENT_TYPE
     )
