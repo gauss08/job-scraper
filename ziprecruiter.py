@@ -60,6 +60,8 @@ EMPLOYMENT_TYPE = {
     "Any":"",
 }
 
+RESULTS_PER_PAGE = 20
+
 # ---------------------------------------------------------------------------
 # URL builder
 # ---------------------------------------------------------------------------
@@ -128,6 +130,7 @@ async def _dismiss_modal(page):
     """
     MODAL_DISMISS_SELECTORS = [
         "button._r_1k_",
+        "#_r_13_",
     ]
 
     for sel in MODAL_DISMISS_SELECTORS:
@@ -160,7 +163,7 @@ async def _read_details(page: Page) -> dict:
 
     info['info'] = await page.locator("div.w-full div.flex.flex-col.gap-y-8").first.inner_text()
 
-    info['job_description'] = await page.locator("div.w-full div.flex.flex-col.gap-y-\[16px\]").inner_text() #div.w-full div.flex.flex-col.gap-y-\[16px\]
+    info['job_description'] = await page.locator(r"div.w-full div.flex.flex-col.gap-y-\[16px\]").inner_text() #div.w-full div.flex.flex-col.gap-y-\[16px\]
 
     return info
     
@@ -214,7 +217,7 @@ def _prompt_multi(label: str, mapping: dict, single: bool = True) -> list | None
 # ─────────────────────────────────────────────
 
 
-async def scrape_jobs(url : str, max_results: int = 25, headless: bool = False, fetch_descriptions: bool = True,) -> list:
+async def scrape_jobs(base_url : str, max_results: int = 25, headless: bool = False, fetch_descriptions: bool = True,) -> list:
     jobs=[]
 
     async with async_playwright() as p:
@@ -227,26 +230,40 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = False, 
             ignore_default_args=["--enable-automation"],     # hides the "automated" banner
         )
 
-        page=await context.new_page()
-        
+        page = await context.new_page()
+        page_num = 1
+
+        #https://www.ziprecruiter.com/jobs-search?
+        #https://www.ziprecruiter.com/jobs-search/2?search=python&location=washington&lk=umbV-QPmdJJ480-WLeS3JA
+
+
         try:
-            print(f" 🔅 Opening : {url[:90]}...")
-            await page.goto(url,wait_until="domcontentloaded", timeout=20000)
-            await page.wait_for_timeout(3500)
-            await _dismiss_modal(page)
+            while len(jobs) < max_results:
+                
+                url_1,url_2 = base_url.split('?')
+                url=f"{url_1}/{page_num}?{url_2}"
+                print(f" 🔅 Opening : {url[:90]}...")
+                await page.goto(url,wait_until="domcontentloaded", timeout=20000)
+                await page.wait_for_timeout(3500)
+                await _dismiss_modal(page)
 
             
-            # Parse job cards
-            cards =  await page.locator("div.job_result_two_pane_v2").all()
+                # Parse job cards
+                cards =  await page.locator("div.job_result_two_pane_v2").all()
 
-            print(f" ❇️  Found {len(cards)} raw cards, extracting up to {max_results}...")
+                print(f" ❇️  Found {len(cards)} raw cards, extracting up to {max_results}...")
 
-            for card in cards:
-                await card.click()
-                await page.wait_for_timeout(2500)
-                await _dismiss_modal(page)
-                info = await _read_details(page)
-                jobs.append(info)
+                for card in cards:
+                    await card.click()
+                    await page.wait_for_timeout(2500)
+                    await _dismiss_modal(page)
+                    info = await _read_details(page)
+                    jobs.append(info)
+                
+                if len(cards) < RESULTS_PER_PAGE:
+                    break
+
+                page_num+=1
 
 
         except Exception as e:
@@ -303,8 +320,8 @@ async def _run_interactive() -> None:
 
     print(f"Full URL : {url}")
     jobs = await scrape_jobs(
-        url,
-        max_results=20,
+        base_url = url,
+        max_results = 25,
     )
  
     # Derive output filename: use the caller-supplied name or generate one
