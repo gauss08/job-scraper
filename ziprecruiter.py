@@ -151,7 +151,8 @@ async def _dismiss_modal(page):
 async def _read_details(page: Page) -> dict:
     info = {}
 
-    info['job_url'] = await page.locator("div.flex.w-full.flex-row.justify-between a.inline-flex").first.get_attribute("href")
+    link = await page.locator("div.flex.w-full.flex-row.justify-between a.inline-flex").first.get_attribute("href")
+    info['job_url'] = "https://www.ziprecruiter.com"+link
 
     info['job_title'] = await page.locator("div.w-full div.grid h2.font-bold").inner_text()
     info['company_name'] = await page.locator("div.w-full div.grid a").first.inner_text()
@@ -242,6 +243,7 @@ async def scrape_jobs(url : str, max_results: int = 25, headless: bool = False, 
 
             for card in cards:
                 await card.click()
+                await page.wait_for_timeout(2500)
                 await _dismiss_modal(page)
                 info = await _read_details(page)
                 jobs.append(info)
