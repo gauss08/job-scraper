@@ -235,30 +235,32 @@ async def scrape_jobs(base_url : str, max_results: int = 25, headless: bool = Fa
         page_num = 1
 
         try:
-            while len(jobs) < max_results:
-    
-                url_1,url_2 = base_url.split('?')
-                url=f"{url_1}/{page_num}?{url_2}"
-                print(f" 🔅 Opening : {url[:90]}...")
-                await page.goto(url,wait_until="domcontentloaded", timeout=20000)
-                await page.wait_for_timeout(3500)
-                await _dismiss_modal(page)
 
-                remaining = max_results - len(jobs)
-            
-                # Parse job cards
-                cards =  await page.locator("div.job_result_two_pane_v2").all()
-                print(f" 🔃 Collecting results (max={remaining}, page={page_num})...")
-                
-                # ✅ Progress bar setup
-                with Progress(
+                            # ✅ Progress bar setup
+            with Progress(
                     TextColumn("[bold green]{task.description}"),
                     BarColumn(),
                     TextColumn("[bold yellow]{task.completed}/{task.total} done"),
                     TimeElapsedColumn(),
                 ) as progress:
+
+                task = progress.add_task("Collecting jobs", total=max_results)
+                print(f" 🔃 Collecting results (max = {max_results}")
+                
+                while len(jobs) < max_results:
+        
+                    url_1,url_2 = base_url.split('?')
+                    url=f"{url_1}/{page_num}?{url_2}"
+                    await page.goto(url,wait_until="domcontentloaded", timeout=20000)
+                    await page.wait_for_timeout(3500)
+                    await _dismiss_modal(page)
+
+                    remaining = max_results - len(jobs)
                     processed_cards=1
-                    task = progress.add_task(f"Page {page_num} [{processed_cards}/{len(cards)}]", total = max_results)
+                
+                    # Parse job cards
+                    cards =  await page.locator("div.job_result_two_pane_v2").all()
+                    #print(f" 🔃 Collecting results (max={remaining}, page={page_num})...")
 
                     for card in cards:
                         await card.click()
@@ -266,17 +268,19 @@ async def scrape_jobs(base_url : str, max_results: int = 25, headless: bool = Fa
                         await _dismiss_modal(page)
                         info = await _read_details(page)
                         jobs.append(info)
-                        progress.update(task,
-                                        advance=1,
-                                        description=f"Page {page_num} [{processed_cards}/{len(cards)}]")
+                        progress.update(
+                            task,
+                            completed=len(jobs),
+                            description=f"Page {page_num} [{processed_cards}/{len(cards)}]"
+                            )
                         processed_cards+=1
                         if len(jobs) >= max_results:
                             break
-                
-                if len(cards) < RESULTS_PER_PAGE:
-                    break
+                    
+                    if len(cards) < RESULTS_PER_PAGE:
+                        break
 
-                page_num+=1
+                    page_num+=1
 
 
         except Exception as e:
