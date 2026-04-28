@@ -41,7 +41,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import logging
 import os
 import platform
 import random
@@ -53,12 +52,6 @@ from urllib.parse import quote_plus, urlsplit, urlunsplit
 
 from playwright.async_api import Page, async_playwright
 from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
-
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -329,13 +322,13 @@ async def _dismiss_modal(page: Page) -> None:
                 await _jitter((0.8, 1.5))
                 return
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Modal selector %r did not match: %s", sel, exc)
+            pass
 
     try:
         await page.keyboard.press("Escape")
         await asyncio.sleep(0.3)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Escape key press failed: %s", exc)
+        pass
 
 
 async def _read_details(page: Page) -> JobRecord:
@@ -386,7 +379,7 @@ async def _read_details(page: Page) -> JobRecord:
                 else f"https://www.ziprecruiter.com{href}"
             )
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Could not extract job_url: %s", exc)
+        pass
 
     _selectors: dict[str, str] = {
         "job_title":      "div.w-full div.grid h2.font-bold",
@@ -400,7 +393,7 @@ async def _read_details(page: Page) -> JobRecord:
         try:
             record[field] = await page.locator(selector).first.inner_text()
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Could not extract %r using %r: %s", field, selector, exc)
+            pass
 
     return record
 
@@ -561,7 +554,6 @@ async def scrape_jobs(
 
                 while len(jobs) < max_results:
                     url = _paginate_url(base_url, page_num)
-                    logger.debug("Navigating to %s", url)
 
                     await page.goto(
                         url, wait_until="domcontentloaded", timeout=20_000
@@ -574,9 +566,6 @@ async def scrape_jobs(
                     ).all()
 
                     if not cards:
-                        logger.info(
-                            "No cards found on page %d — stopping.", page_num
-                        )
                         break
 
                     for idx, card in enumerate(cards, start=1):
@@ -607,8 +596,8 @@ async def scrape_jobs(
 
                     page_num += 1
 
-        except Exception:
-            logger.exception("Scrape failed on page %d", page_num)
+        except Exception as exc:
+            print(f"Scrape failed on page {page_num}: {exc}")
         finally:
             await page.close()
             await context.close()
@@ -903,10 +892,6 @@ def main() -> None:
 
     This is the setuptools entry point as well as the ``__main__`` guard.
     """
-    logging.basicConfig(
-        level=logging.WARNING,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
     parser = _build_arg_parser()
     args = parser.parse_args()
     asyncio.run(_run(args))
