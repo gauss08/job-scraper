@@ -104,7 +104,7 @@ def build_search_url(
 async def _dismiss_modal(page: Page) -> None:
     pass
 
-async def _read_details_public(page: Page) -> dict | None:
+async def _read_details(page: Page) -> dict | None:
     pass
 
 
