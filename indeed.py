@@ -102,27 +102,10 @@ def build_search_url(
 
 
 async def _dismiss_modal(page: Page) -> None:
-    MODAL_DISMISS_SELECTORS = [
-        "button.onetrust-close-btn-handler.banner-close-button",
-        "button.air3-modal-close.modal-header-close-button",
-    ]
+    pass
 
-    for sel in MODAL_DISMISS_SELECTORS:
-        try:
-            btn = page.locator(sel).first
-            if await btn.is_visible(timeout=TIMEOUT_COOL_DOWN):
-                await btn.click()
-                await page.wait_for_timeout(TIMEOUT_COOL_DOWN)
-                return
-        except Exception:
-            pass
-
-    try:
-        await page.keyboard.press("Escape")
-        await page.wait_for_timeout(TIMEOUT_COOL_DOWN)
-    except Exception:
-        pass
-
+async def _read_details_public(page: Page) -> dict | None:
+    pass
 
 
 
